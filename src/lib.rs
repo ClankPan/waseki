@@ -1,20 +1,23 @@
 mod branched_list;
 
+use branched_list::{BranchedList, List}; // あなたのDS
 use std::cell::{Ref, RefCell};
 use std::marker::PhantomData;
 use std::ops::{Add, Mul};
 
-/// ========== Arena（実データ保管所） ==========
+/// ========== Arena（BranchedList ベース） ==========
 struct Arena<T> {
-    l_nodes: RefCell<Vec<Vec<T>>>,
-    q_nodes: RefCell<Vec<QNode<T>>>,
-    w: RefCell<Vec<T>>, // 例: R1CSテープ（お好みで構造化してOK）
+    bl: RefCell<BranchedList<T>>, // 背骨 + 区間列（append-only）
+    lists: RefCell<Vec<List>>,    // List をインデックスで管理
+    q_nodes: RefCell<Vec<QNode>>, // Q の中身（Listインデックスで保持）
+    w: RefCell<Vec<T>>,           // 例: R1CSテープ（ここでは値をそのまま積む）
 }
 
 impl<T> Default for Arena<T> {
     fn default() -> Self {
         Self {
-            l_nodes: RefCell::new(Vec::new()),
+            bl: RefCell::new(BranchedList::new()),
+            lists: RefCell::new(Vec::new()),
             q_nodes: RefCell::new(Vec::new()),
             w: RefCell::new(Vec::new()),
         }
@@ -22,41 +25,76 @@ impl<T> Default for Arena<T> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct QNode<T> {
-    a: Vec<T>,
-    b: Vec<T>,
-    c: Vec<T>,
+struct QNode {
+    a: u32,         // lists[a]
+    b: u32,         // lists[b]
+    c: Option<u32>, // 追加の線形（無いこともある）
 }
 
 impl<T> Arena<T> {
+    /* ------ List（L）側のヘルパ ------ */
+
+    /// Vec<T> から 1 本の List を作って登録、インデックスを返す
     #[inline]
-    fn push_l(&self, data: Vec<T>) -> u32 {
-        let mut l = self.l_nodes.borrow_mut();
-        let idx = l.len() as u32;
-        l.push(data);
-        idx
+    fn list_from_vec(&self, data: Vec<T>) -> u32 {
+        // if data.is_empty() {
+        //     // 空も許容したい場合はこれ（不要なら expect に戻してください）
+        //     return self.empty_list();
+        // }
+
+        let mut bl = self.bl.borrow_mut();
+        let mut it = data.into_iter();
+        let first = it.next().unwrap(); // data は非空
+
+        // 先頭だけ make し、残りは push_slice でまとめて追加
+        let base = bl.make(first);
+        let lst = bl.push_slice(base, it); // ← ここで Iterator をそのまま渡せる
+
+        self.push_list(lst)
     }
+
+    /// 既存 List を登録してインデックスを返す
     #[inline]
-    fn push_q(&self, a: Vec<T>, b: Vec<T>, c: Vec<T>) -> u32 {
+    fn push_list(&self, list: List) -> u32 {
+        let mut ls = self.lists.borrow_mut();
+        let id = ls.len() as u32;
+        ls.push(list);
+        id
+    }
+
+    /// List をクローンで取り出す（内部では所有）
+    #[inline]
+    fn get_list(&self, idx: u32) -> List {
+        self.lists.borrow()[idx as usize].clone()
+    }
+
+    /// a ++ b を作って登録し、インデックスを返す
+    #[inline]
+    fn append_lists(&self, a_idx: u32, b_idx: u32) -> u32 {
+        let a = self.get_list(a_idx);
+        let b = self.get_list(b_idx);
+        let mut bl = self.bl.borrow_mut();
+        let c = bl.append(a, b);
+        self.push_list(c)
+    }
+
+    /* ------ Q 側のヘルパ ------ */
+
+    #[inline]
+    fn push_q(&self, a: u32, b: u32, c: Option<u32>) -> u32 {
         let mut q = self.q_nodes.borrow_mut();
         let idx = q.len() as u32;
         q.push(QNode { a, b, c });
         idx
     }
+
     #[inline]
-    fn borrow_l(&self, idx: u32) -> Vec<T>
-    where
-        T: Clone,
-    {
-        self.l_nodes.borrow()[idx as usize].clone()
-    }
-    #[inline]
-    fn borrow_q(&self, idx: u32) -> QNode<T>
-    where
-        T: Clone,
-    {
+    fn get_q(&self, idx: u32) -> QNode {
         self.q_nodes.borrow()[idx as usize].clone()
     }
+
+    /* ------ テープ ------ */
+
     #[inline]
     fn append_w<I>(&self, iter: I)
     where
@@ -70,7 +108,7 @@ impl<T> Arena<T> {
     }
 }
 
-/// ========== CS（ブランド付きハブ：アリーナへの参照を配布） ==========
+/// ========== CS（ブランド付きハブ） ==========
 pub fn with_cs<T, R, F>(f: F) -> R
 where
     F: for<'id> FnOnce(CS<'id, T>) -> R,
@@ -89,108 +127,111 @@ pub struct CS<'id, T> {
     _brand: PhantomData<&'id mut ()>, // generative brand（不変）
 }
 
-impl<'id, T: Clone> CS<'id, T> {
-    #[inline]
-    pub fn make_l(&self, data: Vec<T>) -> L<'id, T> {
-        L {
-            idx: self.ar.push_l(data),
-            ar: self.ar,
-        }
-    }
-    #[inline]
-    pub fn make_q(&self, a: Vec<T>, b: Vec<T>, c: Vec<T>) -> Q<'id, T> {
-        Q {
-            idx: self.ar.push_q(a, b, c),
-            ar: self.ar,
-        }
-    }
+impl<'id, T> CS<'id, T> {
     #[inline]
     pub fn view_w(&self) -> Ref<'_, Vec<T>> {
         self.ar.view_w()
     }
 }
 
-/// ========== ハンドル型（Copy） ==========
-/// L/Q は (index, arena参照) だけ持つ → Copy 可能
+impl<'id, T: Clone> CS<'id, T> {
+    #[inline]
+    pub fn make_l(&self, data: Vec<T>) -> L<'id, T> {
+        L {
+            l_idx: self.ar.list_from_vec(data),
+            ar: self.ar,
+        }
+    }
+    #[inline]
+    pub fn make_q_from_lists(&self, a: L<'id, T>, b: L<'id, T>, c: Option<L<'id, T>>) -> Q<'id, T> {
+        let c_idx = c.map(|x| x.l_idx);
+        Q {
+            q_idx: self.ar.push_q(a.l_idx, b.l_idx, c_idx),
+            ar: self.ar,
+        }
+    }
+}
+
+/// ========== ハンドル（Copy） ==========
 #[derive(Copy, Clone)]
 pub struct L<'id, T: Clone> {
-    idx: u32,
+    l_idx: u32,
     ar: &'id Arena<T>,
 }
-
 #[derive(Copy, Clone)]
 pub struct Q<'id, T: Clone> {
-    idx: u32,
+    q_idx: u32,
     ar: &'id Arena<T>,
 }
 
-/// 便利メソッド（内部読み出し）
-impl<'id, T: Clone> L<'id, T> {
-    #[inline]
-    fn load(&self) -> Vec<T> {
-        self.ar.borrow_l(self.idx)
-    }
-}
-impl<'id, T: Clone> Q<'id, T> {
-    #[inline]
-    fn load(&self) -> QNode<T> {
-        self.ar.borrow_q(self.idx)
-    }
-}
-
-/// ========== コア演算（ハンドル→アリーナ操作） ==========
-
-#[inline]
-fn new_l<'id, T: Clone>(ar: &'id Arena<T>, data: Vec<T>) -> L<'id, T> {
-    L {
-        idx: ar.push_l(data),
-        ar,
-    }
-}
-
-#[inline]
-fn new_q<'id, T: Clone>(ar: &'id Arena<T>, a: Vec<T>, b: Vec<T>, c: Vec<T>) -> Q<'id, T> {
-    Q {
-        idx: ar.push_q(a, b, c),
-        ar,
-    }
-}
+/* ========= コア演算 ========= */
 
 #[inline]
 fn l_add_l<'id, T: Clone>(x: L<'id, T>, y: L<'id, T>) -> L<'id, T> {
     debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
-    let mut v = x.load();
-    v.extend(y.load());
-    new_l(x.ar, v)
+    let out = x.ar.append_lists(x.l_idx, y.l_idx);
+    L {
+        l_idx: out,
+        ar: x.ar,
+    }
 }
 
 #[inline]
 fn l_mul_l<'id, T: Clone>(x: L<'id, T>, y: L<'id, T>) -> Q<'id, T> {
     debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
-    new_q(x.ar, x.load(), y.load(), Vec::new())
+    let q_idx = x.ar.push_q(x.l_idx, y.l_idx, None);
+    Q { q_idx, ar: x.ar }
 }
 
 #[inline]
 fn q_add_l<'id, T: Clone>(q: Q<'id, T>, l: L<'id, T>) -> Q<'id, T> {
     debug_assert!(std::ptr::eq(q.ar as *const _, l.ar as *const _));
-    let QNode { a, b, mut c } = q.load();
-    c.extend(l.load());
-    new_q(q.ar, a, b, c)
+    let QNode { a, b, c } = q.ar.get_q(q.q_idx);
+    let c_idx = match c {
+        Some(c0) => q.ar.append_lists(c0, l.l_idx),
+        None => l.l_idx,
+    };
+    Q {
+        q_idx: q.ar.push_q(a, b, Some(c_idx)),
+        ar: q.ar,
+    }
 }
 
-/// reduce: Q を R1CS 1行としてテープに出力し、L（一時）に簡約
+/// reduce: Q をテープに出力し、(a ++ b ++ c) を L として返す
 #[inline]
 pub fn reduce<'id, T: Clone>(q: Q<'id, T>) -> L<'id, T> {
-    let QNode { a, b, c } = q.load();
-    // 例: a|b|c をそのまま "テープ" に追記（実装では A*B=C を直列化）
-    q.ar.append_w(a.clone());
-    q.ar.append_w(b.clone());
-    q.ar.append_w(c.clone());
+    let QNode { a, b, c } = q.ar.get_q(q.q_idx);
 
-    let mut data = a;
-    data.extend(b);
-    data.extend(c);
-    new_l(q.ar, data)
+    // a, b, c を順にストリーム出力（branched_listの iter を使う）
+    {
+        let bl = q.ar.bl.borrow();
+        // a
+        for v in bl.iter(&q.ar.get_list(a)) {
+            q.ar.append_w(std::iter::once(v.clone()));
+        }
+        // b
+        for v in bl.iter(&q.ar.get_list(b)) {
+            q.ar.append_w(std::iter::once(v.clone()));
+        }
+        // c（あれば）
+        if let Some(cidx) = c {
+            for v in bl.iter(&q.ar.get_list(cidx)) {
+                q.ar.append_w(std::iter::once(v.clone()));
+            }
+        }
+    }
+
+    // 返り値 L = a ++ b ++ c
+    let ab = q.ar.append_lists(a, b);
+    let abc = if let Some(cidx) = c {
+        q.ar.append_lists(ab, cidx)
+    } else {
+        ab
+    };
+    L {
+        l_idx: abc,
+        ar: q.ar,
+    }
 }
 
 #[inline]
@@ -198,7 +239,7 @@ fn q_mul_q<'id, T: Clone>(x: Q<'id, T>, y: Q<'id, T>) -> Q<'id, T> {
     debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
     let lx = reduce(x);
     let ly = reduce(y);
-    l_mul_l(lx, ly) // a=lx, b=ly, c=[]
+    l_mul_l(lx, ly) // a=lx, b=ly, c=None
 }
 
 #[inline]
@@ -209,7 +250,7 @@ fn q_add_q<'id, T: Clone>(x: Q<'id, T>, y: Q<'id, T>) -> L<'id, T> {
     l_add_l(lx, ly)
 }
 
-/// ========== 演算子実装（ハンドルは Copy なので owned-owned だけでOK） ==========
+/* ========= 演算子トレイト（Copyなので owned-owned でOK） ========= */
 
 impl<'id, T: Clone> Add for L<'id, T> {
     type Output = L<'id, T>;
@@ -229,14 +270,12 @@ impl<'id, T: Clone> Add<L<'id, T>> for Q<'id, T> {
         q_add_l(self, rhs)
     }
 }
-// Q*Q -> Q（内部 reduce）
 impl<'id, T: Clone> Mul for Q<'id, T> {
     type Output = Q<'id, T>;
     fn mul(self, rhs: Self) -> Self::Output {
         q_mul_q(self, rhs)
     }
 }
-// Q+Q -> L（内部 reduce）
 impl<'id, T: Clone> Add for Q<'id, T> {
     type Output = L<'id, T>;
     fn add(self, rhs: Self) -> Self::Output {
@@ -244,23 +283,32 @@ impl<'id, T: Clone> Add for Q<'id, T> {
     }
 }
 
-/// ========== 簡単なデモ ==========
+/* ========= デモ ========= */
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn demo() {
+    fn demo_with_branched_list() {
         with_cs::<i32, _, _>(|cs| {
+            // L を 2 本
             let l1 = cs.make_l(vec![1, 2]);
             let l2 = cs.make_l(vec![3]);
 
-            let l = l1 + l2; // L + L -> L
-            let q = l * l1; // L * L -> Q
-            let q = q + l; // Q + L -> Q
-            let _q = q * (l1 * l2); // Q * Q -> Q（内部 reduce）
+            // L + L -> L（BranchedList::append で連結）
+            let l = l1 + l2;
 
-            assert!(!cs.view_w().is_empty()); // reduce によりテープに出力されている
+            // L * L -> Q（a=l, b=l, c=None）
+            let q = l * l1;
+
+            // Q + L -> Q（c に L を合流）
+            let q = q + l;
+
+            // Q * Q -> Q（内部で reduce → L*L）
+            let _q = q * (l1 * l2);
+
+            // reduce がテープに値を出力しているはず
+            assert!(!cs.view_w().is_empty());
         });
     }
 }
