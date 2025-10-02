@@ -21,9 +21,23 @@ pub struct List {
     queue: Vec<Branch>, // 先頭から順に消費する区間列（非空を想定）
 }
 
+impl List {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
+    }
+}
+
 impl<T> BranchedList<T> {
     pub fn new() -> Self {
         Self { nodes: vec![] }
+    }
+
+    pub fn empty_list() -> List {
+        List {
+            tail: 0,
+            queue: Vec::new(),
+        } // tail は使わない
     }
 
     /// 要素1個の List を作る（不変：常に非空）
@@ -53,6 +67,21 @@ impl<T> BranchedList<T> {
         list
     }
 
+    pub fn from_slice(&mut self, xs: &[T]) -> List
+    where
+        T: Clone,
+    {
+        if xs.is_empty() {
+            return BranchedList::<T>::empty_list();
+        }
+        let mut it = xs.iter().cloned();
+        let mut l = self.make(it.next().unwrap());
+        for v in it {
+            l = self.push(l, v);
+        }
+        l
+    }
+
     /// 連結：a ++ b
     ///
     /// 仕様：
@@ -60,6 +89,13 @@ impl<T> BranchedList<T> {
     /// - そのうえで a の最後のブランチと b の最初のブランチを結合（start を a 側に、len を加算）
     /// - 残りのブランチは順に連結
     pub fn append(&mut self, mut a: List, mut b: List) -> List {
+        if a.queue.is_empty() {
+            return b;
+        } // ∅ ++ b = b
+        if b.queue.is_empty() {
+            return a;
+        } // a ++ ∅ = a
+
         debug_assert!(
             !a.queue.is_empty() && !b.queue.is_empty(),
             "List must be non-empty"
