@@ -1,298 +1,265 @@
 // src/lib.rs
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::marker::PhantomData;
 use std::ops::{Add, Mul};
 
-/// ------------------------------------------------------------
-/// ブランド付き CS：呼ぶたびに新しい 'id を導入（generative）
-/// ------------------------------------------------------------
+/// ========== Arena（実データ保管所） ==========
+struct Arena<T> {
+    l_nodes: RefCell<Vec<Vec<T>>>,
+    q_nodes: RefCell<Vec<QNode<T>>>,
+    w: RefCell<Vec<T>>, // 例: R1CSテープ（お好みで構造化してOK）
+}
+
+impl<T> Default for Arena<T> {
+    fn default() -> Self {
+        Self {
+            l_nodes: RefCell::new(Vec::new()),
+            q_nodes: RefCell::new(Vec::new()),
+            w: RefCell::new(Vec::new()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct QNode<T> {
+    a: Vec<T>,
+    b: Vec<T>,
+    c: Vec<T>,
+}
+
+impl<T> Arena<T> {
+    #[inline]
+    fn push_l(&self, data: Vec<T>) -> u32 {
+        let mut l = self.l_nodes.borrow_mut();
+        let idx = l.len() as u32;
+        l.push(data);
+        idx
+    }
+    #[inline]
+    fn push_q(&self, a: Vec<T>, b: Vec<T>, c: Vec<T>) -> u32 {
+        let mut q = self.q_nodes.borrow_mut();
+        let idx = q.len() as u32;
+        q.push(QNode { a, b, c });
+        idx
+    }
+    #[inline]
+    fn borrow_l(&self, idx: u32) -> Vec<T>
+    where
+        T: Clone,
+    {
+        self.l_nodes.borrow()[idx as usize].clone()
+    }
+    #[inline]
+    fn borrow_q(&self, idx: u32) -> QNode<T>
+    where
+        T: Clone,
+    {
+        self.q_nodes.borrow()[idx as usize].clone()
+    }
+    #[inline]
+    fn append_w<I>(&self, iter: I)
+    where
+        I: IntoIterator<Item = T>,
+    {
+        self.w.borrow_mut().extend(iter);
+    }
+    #[inline]
+    fn view_w(&self) -> Ref<'_, Vec<T>> {
+        self.w.borrow()
+    }
+}
+
+/// ========== CS（ブランド付きハブ：アリーナへの参照を配布） ==========
 pub fn with_cs<T, R, F>(f: F) -> R
 where
     F: for<'id> FnOnce(CS<'id, T>) -> R,
 {
-    let w = RefCell::<Vec<T>>::new(Vec::new());
+    let arena = Arena::<T>::default();
     let cs = CS {
-        w: &w,
-        _brand: PhantomData,
+        ar: &arena,
+        _brand: PhantomData::<&mut ()>,
     };
     f(cs)
 }
 
-/// 制約テープ（ここでは Vec<T> をテープとして使う例）
-#[derive(Debug)]
+#[derive(Copy, Clone)]
 pub struct CS<'id, T> {
-    w: &'id RefCell<Vec<T>>,
-    // 'id を不変として保持（変位の抜け道を塞ぐ）
-    _brand: PhantomData<&'id mut ()>,
+    ar: &'id Arena<T>,
+    _brand: PhantomData<&'id mut ()>, // generative brand（不変）
 }
 
 impl<'id, T: Clone> CS<'id, T> {
     #[inline]
     pub fn make_l(&self, data: Vec<T>) -> L<'id, T> {
-        L { data, cs: self.w }
+        L {
+            idx: self.ar.push_l(data),
+            ar: self.ar,
+        }
     }
     #[inline]
     pub fn make_q(&self, a: Vec<T>, b: Vec<T>, c: Vec<T>) -> Q<'id, T> {
         Q {
-            a,
-            b,
-            c,
-            cs: self.w,
+            idx: self.ar.push_q(a, b, c),
+            ar: self.ar,
         }
     }
     #[inline]
-    pub fn view_w(&self) -> std::cell::Ref<'_, Vec<T>> {
-        self.w.borrow()
+    pub fn view_w(&self) -> Ref<'_, Vec<T>> {
+        self.ar.view_w()
     }
 }
 
-/// 線形（和で増える）
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// ========== ハンドル型（Copy） ==========
+/// L/Q は (index, arena参照) だけ持つ → Copy 可能
+#[derive(Copy, Clone)]
 pub struct L<'id, T: Clone> {
-    pub data: Vec<T>,
-    cs: &'id RefCell<Vec<T>>,
+    idx: u32,
+    ar: &'id Arena<T>,
 }
 
-/// 積ノード（A*B=C の未確定制約）
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone)]
 pub struct Q<'id, T: Clone> {
-    pub a: Vec<T>,
-    pub b: Vec<T>,
-    pub c: Vec<T>,
-    cs: &'id RefCell<Vec<T>>,
+    idx: u32,
+    ar: &'id Arena<T>,
 }
 
-/* ========= ユーティリティ ========= */
-
-#[inline]
-fn concat_clone<T: Clone>(xs: &[T], ys: &[T]) -> Vec<T> {
-    let mut v = Vec::with_capacity(xs.len() + ys.len());
-    v.extend_from_slice(xs);
-    v.extend_from_slice(ys);
-    v
-}
-
-/// Q を R1CS 1 行としてテープに出力し、L に簡約（reduction）
-#[inline]
-pub fn reduce<'id, T: Clone>(q: &Q<'id, T>) -> L<'id, T> {
-    {
-        let mut w = q.cs.borrow_mut();
-        // 実案件では a,b,c を R1CS 行としてシリアライズして push する
-        w.extend(q.a.iter().cloned());
-        w.extend(q.b.iter().cloned());
-        w.extend(q.c.iter().cloned());
+/// 便利メソッド（内部読み出し）
+impl<'id, T: Clone> L<'id, T> {
+    #[inline]
+    fn load(&self) -> Vec<T> {
+        self.ar.borrow_l(self.idx)
     }
-    let mut data = Vec::with_capacity(q.a.len() + q.b.len() + q.c.len());
-    data.extend_from_slice(&q.a);
-    data.extend_from_slice(&q.b);
-    data.extend_from_slice(&q.c);
-    L { data, cs: q.cs }
+}
+impl<'id, T: Clone> Q<'id, T> {
+    #[inline]
+    fn load(&self) -> QNode<T> {
+        self.ar.borrow_q(self.idx)
+    }
 }
 
-/* ========= コア計算（参照版に集約） ========= */
+/// ========== コア演算（ハンドル→アリーナ操作） ==========
 
 #[inline]
-fn l_add_l<'id, T: Clone>(x: &L<'id, T>, y: &L<'id, T>) -> L<'id, T> {
+fn new_l<'id, T: Clone>(ar: &'id Arena<T>, data: Vec<T>) -> L<'id, T> {
     L {
-        data: concat_clone(&x.data, &y.data),
-        cs: x.cs,
+        idx: ar.push_l(data),
+        ar,
     }
 }
 
 #[inline]
-fn l_mul_l<'id, T: Clone>(x: &L<'id, T>, y: &L<'id, T>) -> Q<'id, T> {
+fn new_q<'id, T: Clone>(ar: &'id Arena<T>, a: Vec<T>, b: Vec<T>, c: Vec<T>) -> Q<'id, T> {
     Q {
-        a: x.data.clone(),
-        b: y.data.clone(),
-        c: Vec::new(),
-        cs: x.cs,
+        idx: ar.push_q(a, b, c),
+        ar,
     }
 }
 
 #[inline]
-fn q_add_l<'id, T: Clone>(q: &Q<'id, T>, l: &L<'id, T>) -> Q<'id, T> {
-    let mut c = Vec::with_capacity(q.c.len() + l.data.len());
-    c.extend_from_slice(&q.c);
-    c.extend_from_slice(&l.data);
-    Q {
-        a: q.a.clone(),
-        b: q.b.clone(),
-        c,
-        cs: q.cs,
-    }
+fn l_add_l<'id, T: Clone>(x: L<'id, T>, y: L<'id, T>) -> L<'id, T> {
+    debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
+    let mut v = x.load();
+    v.extend(y.load());
+    new_l(x.ar, v)
 }
 
 #[inline]
-fn q_mul_q<'id, T: Clone>(q1: &Q<'id, T>, q2: &Q<'id, T>) -> Q<'id, T> {
-    let l1 = reduce(q1);
-    let l2 = reduce(q2);
-    Q {
-        a: l1.data,
-        b: l2.data,
-        c: Vec::new(),
-        cs: q1.cs,
-    }
+fn l_mul_l<'id, T: Clone>(x: L<'id, T>, y: L<'id, T>) -> Q<'id, T> {
+    debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
+    new_q(x.ar, x.load(), y.load(), Vec::new())
 }
 
 #[inline]
-fn q_add_q<'id, T: Clone>(q1: &Q<'id, T>, q2: &Q<'id, T>) -> L<'id, T> {
-    let l1 = reduce(q1);
-    let l2 = reduce(q2);
-    L {
-        data: concat_clone(&l1.data, &l2.data),
-        cs: q1.cs,
-    }
+fn q_add_l<'id, T: Clone>(q: Q<'id, T>, l: L<'id, T>) -> Q<'id, T> {
+    debug_assert!(std::ptr::eq(q.ar as *const _, l.ar as *const _));
+    let QNode { a, b, mut c } = q.load();
+    c.extend(l.load());
+    new_q(q.ar, a, b, c)
 }
 
-/* ========= 演算子トレイト実装（4パターン forward） ========= */
-/* -- L + L -> L -- */
-impl<'id, T: Clone> Add<&L<'id, T>> for &L<'id, T> {
+/// reduce: Q を R1CS 1行としてテープに出力し、L（一時）に簡約
+#[inline]
+pub fn reduce<'id, T: Clone>(q: Q<'id, T>) -> L<'id, T> {
+    let QNode { a, b, c } = q.load();
+    // 例: a|b|c をそのまま "テープ" に追記（実装では A*B=C を直列化）
+    q.ar.append_w(a.clone());
+    q.ar.append_w(b.clone());
+    q.ar.append_w(c.clone());
+
+    let mut data = a;
+    data.extend(b);
+    data.extend(c);
+    new_l(q.ar, data)
+}
+
+#[inline]
+fn q_mul_q<'id, T: Clone>(x: Q<'id, T>, y: Q<'id, T>) -> Q<'id, T> {
+    debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
+    let lx = reduce(x);
+    let ly = reduce(y);
+    l_mul_l(lx, ly) // a=lx, b=ly, c=[]
+}
+
+#[inline]
+fn q_add_q<'id, T: Clone>(x: Q<'id, T>, y: Q<'id, T>) -> L<'id, T> {
+    debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
+    let lx = reduce(x);
+    let ly = reduce(y);
+    l_add_l(lx, ly)
+}
+
+/// ========== 演算子実装（ハンドルは Copy なので owned-owned だけでOK） ==========
+
+impl<'id, T: Clone> Add for L<'id, T> {
     type Output = L<'id, T>;
-    fn add(self, rhs: &L<'id, T>) -> Self::Output {
+    fn add(self, rhs: Self) -> Self::Output {
         l_add_l(self, rhs)
     }
 }
-impl<'id, T: Clone> Add<L<'id, T>> for &L<'id, T> {
-    type Output = L<'id, T>;
-    fn add(self, rhs: L<'id, T>) -> Self::Output {
-        l_add_l(self, &rhs)
-    }
-}
-impl<'id, T: Clone> Add<&L<'id, T>> for L<'id, T> {
-    type Output = L<'id, T>;
-    fn add(self, rhs: &L<'id, T>) -> Self::Output {
-        l_add_l(&self, rhs)
-    }
-}
-impl<'id, T: Clone> Add<L<'id, T>> for L<'id, T> {
-    type Output = L<'id, T>;
-    fn add(self, rhs: L<'id, T>) -> Self::Output {
-        l_add_l(&self, &rhs)
-    }
-}
-
-/* -- L * L -> Q -- */
-impl<'id, T: Clone> Mul<&L<'id, T>> for &L<'id, T> {
+impl<'id, T: Clone> Mul for L<'id, T> {
     type Output = Q<'id, T>;
-    fn mul(self, rhs: &L<'id, T>) -> Self::Output {
+    fn mul(self, rhs: Self) -> Self::Output {
         l_mul_l(self, rhs)
-    }
-}
-impl<'id, T: Clone> Mul<L<'id, T>> for &L<'id, T> {
-    type Output = Q<'id, T>;
-    fn mul(self, rhs: L<'id, T>) -> Self::Output {
-        l_mul_l(self, &rhs)
-    }
-}
-impl<'id, T: Clone> Mul<&L<'id, T>> for L<'id, T> {
-    type Output = Q<'id, T>;
-    fn mul(self, rhs: &L<'id, T>) -> Self::Output {
-        l_mul_l(&self, rhs)
-    }
-}
-impl<'id, T: Clone> Mul<L<'id, T>> for L<'id, T> {
-    type Output = Q<'id, T>;
-    fn mul(self, rhs: L<'id, T>) -> Self::Output {
-        l_mul_l(&self, &rhs)
-    }
-}
-
-/* -- Q + L -> Q -- */
-impl<'id, T: Clone> Add<&L<'id, T>> for &Q<'id, T> {
-    type Output = Q<'id, T>;
-    fn add(self, rhs: &L<'id, T>) -> Self::Output {
-        q_add_l(self, rhs)
-    }
-}
-impl<'id, T: Clone> Add<L<'id, T>> for &Q<'id, T> {
-    type Output = Q<'id, T>;
-    fn add(self, rhs: L<'id, T>) -> Self::Output {
-        q_add_l(self, &rhs)
-    }
-}
-impl<'id, T: Clone> Add<&L<'id, T>> for Q<'id, T> {
-    type Output = Q<'id, T>;
-    fn add(self, rhs: &L<'id, T>) -> Self::Output {
-        q_add_l(&self, rhs)
     }
 }
 impl<'id, T: Clone> Add<L<'id, T>> for Q<'id, T> {
     type Output = Q<'id, T>;
     fn add(self, rhs: L<'id, T>) -> Self::Output {
-        q_add_l(&self, &rhs)
+        q_add_l(self, rhs)
     }
 }
-
-/* -- Q * Q -> Q（内部で reduce→L*L） -- */
-impl<'id, T: Clone> Mul<&Q<'id, T>> for &Q<'id, T> {
+// Q*Q -> Q（内部 reduce）
+impl<'id, T: Clone> Mul for Q<'id, T> {
     type Output = Q<'id, T>;
-    fn mul(self, rhs: &Q<'id, T>) -> Self::Output {
+    fn mul(self, rhs: Self) -> Self::Output {
         q_mul_q(self, rhs)
     }
 }
-impl<'id, T: Clone> Mul<Q<'id, T>> for &Q<'id, T> {
-    type Output = Q<'id, T>;
-    fn mul(self, rhs: Q<'id, T>) -> Self::Output {
-        q_mul_q(self, &rhs)
-    }
-}
-impl<'id, T: Clone> Mul<&Q<'id, T>> for Q<'id, T> {
-    type Output = Q<'id, T>;
-    fn mul(self, rhs: &Q<'id, T>) -> Self::Output {
-        q_mul_q(&self, rhs)
-    }
-}
-impl<'id, T: Clone> Mul<Q<'id, T>> for Q<'id, T> {
-    type Output = Q<'id, T>;
-    fn mul(self, rhs: Q<'id, T>) -> Self::Output {
-        q_mul_q(&self, &rhs)
-    }
-}
-
-/* -- Q + Q -> L（内部で reduce→L + L） -- */
-impl<'id, T: Clone> Add<&Q<'id, T>> for &Q<'id, T> {
+// Q+Q -> L（内部 reduce）
+impl<'id, T: Clone> Add for Q<'id, T> {
     type Output = L<'id, T>;
-    fn add(self, rhs: &Q<'id, T>) -> Self::Output {
+    fn add(self, rhs: Self) -> Self::Output {
         q_add_q(self, rhs)
     }
 }
-impl<'id, T: Clone> Add<Q<'id, T>> for &Q<'id, T> {
-    type Output = L<'id, T>;
-    fn add(self, rhs: Q<'id, T>) -> Self::Output {
-        q_add_q(self, &rhs)
-    }
-}
-impl<'id, T: Clone> Add<&Q<'id, T>> for Q<'id, T> {
-    type Output = L<'id, T>;
-    fn add(self, rhs: &Q<'id, T>) -> Self::Output {
-        q_add_q(&self, rhs)
-    }
-}
-impl<'id, T: Clone> Add<Q<'id, T>> for Q<'id, T> {
-    type Output = L<'id, T>;
-    fn add(self, rhs: Q<'id, T>) -> Self::Output {
-        q_add_q(&self, &rhs)
-    }
-}
 
-/* ========= 簡単なデモ ========= */
+/// ========== 簡単なデモ ==========
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn demo_flow() {
+    fn demo() {
         with_cs::<i32, _, _>(|cs| {
             let l1 = cs.make_l(vec![1, 2]);
             let l2 = cs.make_l(vec![3]);
 
-            let l_sum = l1.clone() + l2.clone(); // L + L -> L
-            let q = l_sum.clone() * l2.clone(); // L * L -> Q
-            let q2 = q.clone() + l1.clone(); // Q + L -> Q
-            let _q3 = q2.clone() * (l1 * l2); // Q * Q -> Q（内部 reduce）
+            let l = l1 + l2; // L + L -> L
+            let q = l * l1; // L * L -> Q
+            let q = q + l; // Q + L -> Q
+            let _q = q * (l1 * l2); // Q * Q -> Q（内部 reduce）
 
-            let w = cs.view_w();
-            assert!(w.len() > 0);
+            assert!(!cs.view_w().is_empty()); // reduce によりテープに出力されている
         });
     }
 }
