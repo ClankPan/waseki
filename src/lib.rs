@@ -1,4 +1,5 @@
 mod branched_list;
+mod list_machine;
 
 use std::cell::{Ref, RefCell};
 use std::marker::PhantomData;
@@ -134,21 +135,6 @@ where
         ar: x.ar,
         v: x.v * y.v,
     }
-}
-
-#[inline]
-fn q_add_l<'id, T: Clone>(q: Q<'id, T>, l: L<'id, T>) -> Q<'id, T> {
-    debug_assert!(std::ptr::eq(q.ar as *const _, l.ar as *const _));
-    // let QNode { a, b, c } = q.ar.get_q(q.q_idx);
-    // let c_idx = match c {
-    //     Some(c0) => q.ar.append_lists(c0, l.l_idx),
-    //     None => l.l_idx,
-    // };
-    // Q {
-    //     q_idx: q.ar.push_q(a, b, Some(c_idx)),
-    //     ar: q.ar,
-    // }
-    todo!()
 }
 
 // /// ========== Arena（BranchedList ベース） ==========
