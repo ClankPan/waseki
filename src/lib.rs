@@ -1,5 +1,3 @@
-// src/lib.rs
-
 mod branched_list;
 
 use std::cell::{Ref, RefCell};
