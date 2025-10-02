@@ -1,4 +1,7 @@
 // src/lib.rs
+
+mod branched_list;
+
 use std::cell::{Ref, RefCell};
 use std::marker::PhantomData;
 use std::ops::{Add, Mul};
