@@ -3,14 +3,12 @@ mod ar;
 mod bops;
 mod cs;
 mod rops;
-mod utils;
 
 pub use aops::*;
 use ar::Arena;
 pub use bops::*;
 pub use cs::*;
 pub use rops::*;
-use utils::*;
 
 use num_traits::{One, Zero};
 use std::ops::{Add, Mul};
@@ -32,7 +30,7 @@ impl<T: Copy + Zero> Default for List<T> {
     }
 }
 
-impl<T: Copy + Zero> List<T> {
+impl<T: Copy + One + Zero> List<T> {
     fn new(v: (usize, T)) -> Self {
         let mut l = Self::default();
         l.push(v);
@@ -41,6 +39,20 @@ impl<T: Copy + Zero> List<T> {
     fn push(&mut self, v: (usize, T)) {
         self.list[self.len] = v;
         self.len += 1;
+    }
+    fn to_vec(&self) -> Vec<(usize, T)> {
+        self.list[..self.len].to_vec()
+    }
+    fn mul(&mut self, t: T) {
+        self.list.iter_mut().for_each(|i| i.1 = t * i.1);
+    }
+    fn len(&self) -> usize {
+        self.len
+    }
+    fn merge(&mut self, rhs: Self) {
+        for v in rhs.to_vec() {
+            self.push(v)
+        }
     }
 }
 
@@ -59,7 +71,7 @@ pub struct Q<'id, T> {
     ar: &'id Arena<T>,
 }
 
-impl<'id, T: Zero + Copy> L<'id, T> {
+impl<'id, T: One + Zero + Copy> L<'id, T> {
     #[inline]
     fn new(ar: &'id Arena<T>) -> Self {
         Self {
@@ -71,7 +83,7 @@ impl<'id, T: Zero + Copy> L<'id, T> {
     #[inline]
     fn constant(ar: &'id Arena<T>, t: T) -> Self {
         let mut l = Self::new(ar);
-        l.l.push((0, t));
+        l.l = List::new((0, t));
         l
     }
 
@@ -89,7 +101,8 @@ where
     pub fn reduce(&self) -> L<'id, T> {
         let (a, b, c) = (self.a, self.b, self.c);
         let v = a.v * b.v + c.v; // A*B+C=W
-        let idx = self.ar.reduce(a.l.into(), b.l.into(), c.l.into(), v);
+        let idx = self.ar.alloc(v);
+        self.ar.exp(a.l.to_vec(), b.l.to_vec(), c.l.to_vec(), idx);
         let l = List::new((idx, T::one()));
         L { l, ar: self.ar, v }
     }
@@ -102,23 +115,22 @@ where
 
 /// ========== L + L -> L ==========
 #[inline]
-fn l_add_l<'id, T>(x: L<'id, T>, y: L<'id, T>) -> L<'id, T>
+fn l_add_l<'id, T>(mut x: L<'id, T>, y: L<'id, T>) -> L<'id, T>
 where
     T: Copy + Default + PartialEq + One + Zero,
 {
     debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
 
     let v = x.v + y.v;
+    let ar = x.ar;
 
-    // 疎和（同一 index を合算）
-    let merged = merge_and_prune(&x.l, &y.l);
-
-    // 収まるなら固定長にパック、収まらなければ reduce で witness 化
-    let l = if let Ok(packed) = pack_list(&merged) {
-        packed
-    } else {
-        let idx = x.ar.reduce(List::default(), List::default(), merged, v);
+    let l = if x.l.len() + y.l.len() > 2 * N {
+        let idx = ar.alloc(v);
+        ar.exp(vec![], vec![], [x.l.to_vec(), y.l.to_vec()].concat(), idx);
         List::new((idx, T::one()))
+    } else {
+        x.l.merge(y.l);
+        x.l
     };
 
     L { l, ar: x.ar, v }
@@ -187,9 +199,7 @@ where
     let v = t * l.v;
     let ar = l.ar;
     let mut l = l.l;
-    for i in &mut l {
-        i.1 = t * i.1;
-    }
+    l.mul(t);
     L { l, v, ar }
 }
 
@@ -268,7 +278,7 @@ mod tests {
             // u128 + Q -> Q;
             let _q = 1u128 + q;
 
-            let l = &l + &l;
+            let _l = &l + &l;
 
             // reduce がテープに値を出力しているはず
             // assert!(!cs.view_w().is_empty());
@@ -280,7 +290,3 @@ mod tests {
         demo::<GoldilocksRingNTT>()
     }
 }
-
-// if x.l++y.lの非ゼロの個数が2Nを超えたらreduceしてwitnessを割り当ててしまう
-// その場合、二回目以降のloopのwitnessの割り当て順をどうするか？
-// 最適化時にシャッフルしないでshrinkだけすれば一致するはず

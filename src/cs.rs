@@ -1,4 +1,4 @@
-use crate::{L, N, ar::Arena};
+use crate::{L, List, N, ar::Arena};
 use num_traits::{One, Zero};
 use std::marker::PhantomData;
 
@@ -29,8 +29,7 @@ where
     #[inline]
     pub fn alloc(&self, v: T) -> L<'id, T> {
         let idx = self.ar.alloc(v);
-        let mut l = [(0, T::zero()); N];
-        l[0] = (idx, T::one());
+        let l = List::new((idx, T::one()));
         L { v, l, ar: self.ar }
     }
 
