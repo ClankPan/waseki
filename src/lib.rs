@@ -2,12 +2,10 @@ mod branched_list;
 mod list_machine;
 
 use num_traits::{One, Zero};
-use std::cell::{Ref, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::{Add, Mul};
-
-// あなたの branched_list モジュール前提
 
 pub struct Arena<T> {
     wit: RefCell<Vec<T>>,
@@ -129,8 +127,6 @@ where
     }
 }
 
-/// ======== 補助ユーティリティ =========
-
 /// 2つの疎ベクトル（固定長）を結合して、同じ index を合算し、0 を除去
 fn merge_and_prune<T>(a: &List<T>, b: &List<T>) -> Vec<(usize, T)>
 where
@@ -202,12 +198,8 @@ where
 {
     debug_assert!(std::ptr::eq(a.ar as *const _, b.ar as *const _));
     let ar = a.ar;
-    Q {
-        a,
-        b,
-        c: L::new(ar),
-        ar,
-    }
+    let c = L::new(ar);
+    Q { a, b, c, ar }
 }
 
 /// ========== Q + L -> Q ==========
@@ -217,14 +209,19 @@ where
     T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
 {
     debug_assert!(std::ptr::eq(q.ar as *const _, l.ar as *const _));
+    let (a, b, c) = (q.a, q.b, l_add_l(q.c, l));
+    let ar = q.ar;
+    Q { a, b, c, ar }
+}
 
-    let c = l_add_l(q.c, l);
-    Q {
-        a: q.a,
-        b: q.b,
-        c,
-        ar: q.ar,
-    }
+/// ========== Q * L -> Q ==========
+#[inline]
+fn q_mul_l<'id, T: Clone>(q: Q<'id, T>, l: L<'id, T>) -> Q<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Mul<Output = T> + One + Zero,
+{
+    debug_assert!(std::ptr::eq(q.ar as *const _, l.ar as *const _));
+    l_mul_l(q.reduce(), l)
 }
 
 /// ========== Q + Q -> L ==========
