@@ -1,65 +1,20 @@
+mod aops;
+mod ar;
+mod bops;
+mod cs;
+mod rops;
+mod utils;
+
+pub use aops::*;
+use ar::Arena;
+pub use bops::*;
+pub use cs::*;
+pub use rops::*;
+use utils::*;
+
 use num_traits::{One, Zero};
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::ops::{Add, Mul};
 
-pub struct Arena<T> {
-    wit: RefCell<Vec<T>>,
-    exp: RefCell<Vec<(Vec<(usize, T)>, Vec<(usize, T)>, Vec<(usize, T)>, usize)>>,
-}
-
-impl<T: One> Default for Arena<T> {
-    fn default() -> Self {
-        Self {
-            wit: RefCell::new(vec![T::one()]), // 定数の1
-            exp: RefCell::new(Vec::new()),
-        }
-    }
-}
-
-impl<T: Default + PartialEq + One + Zero> Arena<T> {
-    #[inline]
-    pub fn disable(&self) {
-        self.wit.borrow_mut()[0] = T::zero(); // 定数項をゼロに
-    }
-
-    #[inline]
-    pub fn enable(&self) {
-        self.wit.borrow_mut()[0] = T::one(); // 定数項を戻す
-    }
-
-    #[inline]
-    fn alloc(&self, v: T) -> usize {
-        let mut wit = self.wit.borrow_mut();
-        let idx = wit.len();
-        wit.push(v);
-        idx
-    }
-
-    #[inline]
-    fn reduce(
-        &self,
-        mut a: Vec<(usize, T)>,
-        mut b: Vec<(usize, T)>,
-        mut c: Vec<(usize, T)>,
-        v: T,
-    ) -> usize {
-        let zero = T::default();
-
-        // その場で 0 要素を除去（追加の Vec を作らない）
-        a.retain(|(_, x)| x != &zero);
-        b.retain(|(_, x)| x != &zero);
-        c.retain(|(_, x)| x != &zero);
-
-        let idx = self.alloc(v);
-        self.exp.borrow_mut().push((a, b, c, idx));
-        idx
-    }
-}
-
-/// ========== ハンドル（Copy） ==========
-/// L/Q は “インデックス + Arena参照” だけを持つ
 const N: usize = 10;
 
 type List<T> = [(usize, T); N];
@@ -121,87 +76,6 @@ where
     }
 }
 
-/// ========== CS（ブランド付き：generative lifetime） ==========
-pub fn with_cs<T, R, F>(f: F) -> R
-where
-    F: for<'id> FnOnce(CS<'id, T>) -> R,
-    T: One,
-{
-    let arena = Arena::<T>::default();
-    let cs = CS {
-        ar: &arena,
-        _brand: PhantomData::<&mut ()>,
-    };
-    f(cs)
-}
-
-#[derive(Copy, Clone)]
-pub struct CS<'id, T> {
-    ar: &'id Arena<T>,
-    _brand: PhantomData<&'id mut ()>, // 不変ブランド
-}
-
-impl<'id, T> CS<'id, T>
-where
-    T: Clone + Copy + Default + PartialEq + One + Zero,
-{
-    #[inline]
-    pub fn alloc(&self, v: T) -> L<'id, T> {
-        let idx = self.ar.alloc(v);
-        let mut l = [(0, T::zero()); N];
-        l[0] = (idx, T::one());
-        L { l, ar: self.ar, v }
-    }
-
-    #[inline]
-    pub fn disable(&self) {
-        self.ar.disable();
-    }
-
-    #[inline]
-    pub fn enable(&self) {
-        self.ar.enable();
-    }
-}
-
-/// 2つの疎ベクトル（固定長）を結合して、同じ index を合算し、0 を除去
-fn merge_and_prune<T>(a: &List<T>, b: &List<T>) -> Vec<(usize, T)>
-where
-    // T: Copy + Add<Output = T> + PartialEq + Default + Zero,
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    let mut map: HashMap<usize, T> = HashMap::new();
-    let zero = T::zero();
-
-    for &(i, c) in a.iter().chain(b.iter()) {
-        if c == zero {
-            continue;
-        }
-        map.entry(i)
-            .and_modify(|acc| *acc = (*acc) + c)
-            .or_insert(c);
-    }
-
-    // 0 になったものを取り除く
-    map.into_iter().filter(|&(_i, ref c)| *c != zero).collect()
-}
-
-/// 可変長 Vec を固定長 List<T> にパック（余りは 0 で埋める）
-/// len > N の場合は Err(vec) を返す（呼び出し側で reduce へ）
-fn pack_list<T>(v: &[(usize, T)]) -> Result<List<T>, ()>
-where
-    T: Copy + Default + Zero,
-{
-    if v.len() > N {
-        return Err(());
-    }
-    let mut out = [(0usize, T::zero()); N];
-    for (dst, &(i, c)) in out.iter_mut().zip(v.iter()) {
-        *dst = (i, c);
-    }
-    Ok(out)
-}
-
 /// ========== L + L -> L ==========
 #[inline]
 fn l_add_l<'id, T>(x: L<'id, T>, y: L<'id, T>) -> L<'id, T>
@@ -252,15 +126,6 @@ where
     Q { a, b, c, ar }
 }
 
-/// ========== L + Q -> Q ==========
-#[inline]
-fn l_add_q<'id, T: Clone>(l: L<'id, T>, q: Q<'id, T>) -> Q<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    q_add_l(q, l)
-}
-
 /// ========== Q * L -> Q ==========
 #[inline]
 fn q_mul_l<'id, T: Clone>(q: Q<'id, T>, l: L<'id, T>) -> Q<'id, T>
@@ -306,15 +171,6 @@ where
     L { l, v, ar }
 }
 
-/// ========== L * T -> L ==========
-#[inline]
-fn l_mul_t<'id, T: Clone>(l: L<'id, T>, t: T) -> L<'id, T>
-where
-    T: Copy + Default + One + Zero,
-{
-    t_mul_l(t, l)
-}
-
 /// ========== T * Q -> Q ==========
 #[inline]
 fn t_mul_q<'id, T: Clone>(t: T, q: Q<'id, T>) -> Q<'id, T>
@@ -328,53 +184,6 @@ where
     Q { a, b, c, ar }
 }
 
-/// ========== Q * T -> Q ==========
-#[inline]
-fn q_mul_t<'id, T: Clone>(q: Q<'id, T>, t: T) -> Q<'id, T>
-where
-    T: Copy + Default + One + Zero,
-{
-    t_mul_q(t, q)
-}
-
-/// ========== u128 * L -> L ==========
-#[inline]
-fn u128_mul_l<'id, T: Clone + From<u128>>(t: u128, l: L<'id, T>) -> L<'id, T>
-where
-    T: Copy + Default + One + Zero,
-{
-    let t = T::from(t);
-    t_mul_l(t, l)
-}
-
-/// ========== L * u128 -> L ==========
-#[inline]
-fn l_mul_u128<'id, T: Clone + From<u128>>(l: L<'id, T>, t: u128) -> L<'id, T>
-where
-    T: Copy + Default + One + Zero,
-{
-    u128_mul_l(t, l)
-}
-
-/// ========== u128 * Q -> Q ==========
-#[inline]
-fn u128_mul_q<'id, T: Clone + From<u128>>(t: u128, q: Q<'id, T>) -> Q<'id, T>
-where
-    T: Copy + Default + One + Zero,
-{
-    let t = T::from(t);
-    t_mul_q(t, q)
-}
-
-/// ========== Q * u128 -> Q ==========
-#[inline]
-fn q_mul_u128<'id, T: Clone + From<u128>>(q: Q<'id, T>, t: u128) -> Q<'id, T>
-where
-    T: Copy + Default + One + Zero,
-{
-    u128_mul_q(t, q)
-}
-
 /// ========== T + L -> L ==========
 #[inline]
 fn t_add_l<'id, T: Clone>(t: T, l: L<'id, T>) -> L<'id, T>
@@ -382,16 +191,7 @@ where
     T: Copy + Default + PartialEq + One + Zero,
 {
     let t = L::constant(l.ar, t);
-    l_add_l(t, l)
-}
-
-/// ========== L + T -> L ==========
-#[inline]
-fn l_add_t<'id, T: Clone>(l: L<'id, T>, t: T) -> L<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    t_add_l(t, l)
+    l_add_l(l, t)
 }
 
 /// ========== T + Q -> Q==========
@@ -401,340 +201,7 @@ where
     T: Copy + Default + PartialEq + One + Zero,
 {
     let t = L::constant(q.ar, t);
-    l_add_q(t, q)
-}
-
-/// ========== Q + T -> Q ==========
-#[inline]
-fn q_add_t<'id, T: Clone>(q: Q<'id, T>, t: T) -> Q<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    t_add_q(t, q)
-}
-
-/// ========== u128 + L -> L ==========
-#[inline]
-fn u128_add_l<'id, T: Clone + From<u128>>(t: u128, l: L<'id, T>) -> L<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    let t = T::from(t);
-    t_add_l(t, l)
-}
-
-/// ========== L + u128 -> L ==========
-#[inline]
-fn l_add_u128<'id, T: Clone + From<u128>>(l: L<'id, T>, t: u128) -> L<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    u128_add_l(t, l)
-}
-
-/// ========== u128 + Q -> Q ==========
-#[inline]
-fn u128_add_q<'id, T: Clone + From<u128>>(t: u128, q: Q<'id, T>) -> Q<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    let t = T::from(t);
-    t_add_q(t, q)
-}
-
-/// ========== Q + u128 -> Q ==========
-#[inline]
-fn q_add_u128<'id, T: From<u128>>(q: Q<'id, T>, t: u128) -> Q<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    u128_add_q(t, q)
-}
-
-/* ========= 演算子トレイト（Copyなので owned-owned でOK） ========= */
-// L + L -> L
-impl<'id, T> Add for L<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = L<'id, T>;
-    fn add(self, rhs: Self) -> Self::Output {
-        l_add_l(self, rhs)
-    }
-}
-
-// L * L -> Q
-impl<'id, T> Mul for L<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = Q<'id, T>;
-    fn mul(self, rhs: Self) -> Self::Output {
-        l_mul_l(self, rhs)
-    }
-}
-
-// L + Q -> Q
-impl<'id, T> Add<Q<'id, T>> for L<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = Q<'id, T>;
-    #[inline]
-    fn add(self, rhs: Q<'id, T>) -> Self::Output {
-        q_add_l(rhs, self)
-    }
-}
-
-// L * Q -> Q
-impl<'id, T> Mul<Q<'id, T>> for L<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = Q<'id, T>;
-    #[inline]
-    fn mul(self, rhs: Q<'id, T>) -> Self::Output {
-        // Q * L の実装をそのまま利用
-        q_mul_l(rhs, self)
-    }
-}
-
-// Q + L -> Q
-impl<'id, T> Add<L<'id, T>> for Q<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = Q<'id, T>;
-    fn add(self, rhs: L<'id, T>) -> Self::Output {
-        q_add_l(self, rhs)
-    }
-}
-
-// Q * L -> Q
-impl<'id, T> Mul<L<'id, T>> for Q<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = Q<'id, T>;
-    fn mul(self, rhs: L<'id, T>) -> Self::Output {
-        q_mul_l(self, rhs)
-    }
-}
-
-// Q * Q -> Q
-impl<'id, T> Mul for Q<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = Q<'id, T>;
-    fn mul(self, rhs: Self) -> Self::Output {
-        q_mul_q(self, rhs)
-    }
-}
-
-// Q + Q -> Q
-impl<'id, T: Clone> Add for Q<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = L<'id, T>;
-    fn add(self, rhs: Self) -> Self::Output {
-        q_add_q(self, rhs)
-    }
-}
-
-// u128 * L -> L
-impl<'id, T> Mul<L<'id, T>> for u128
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = L<'id, T>;
-    #[inline]
-    fn mul(self, rhs: L<'id, T>) -> Self::Output {
-        u128_mul_l(self, rhs)
-    }
-}
-
-// L * u128 -> L
-impl<'id, T> Mul<u128> for L<'id, T>
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = L<'id, T>;
-    #[inline]
-    fn mul(self, rhs: u128) -> Self::Output {
-        u128_mul_l(rhs, self)
-    }
-}
-
-// u128 + L -> L
-impl<'id, T> Add<L<'id, T>> for u128
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = L<'id, T>;
-    #[inline]
-    fn add(self, rhs: L<'id, T>) -> Self::Output {
-        u128_add_l(self, rhs)
-    }
-}
-
-// L + u128 -> L
-impl<'id, T> Add<u128> for L<'id, T>
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = L<'id, T>;
-    #[inline]
-    fn add(self, rhs: u128) -> Self::Output {
-        u128_add_l(rhs, self)
-    }
-}
-
-// u128 * Q -> Q
-impl<'id, T> Mul<Q<'id, T>> for u128
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = Q<'id, T>;
-    #[inline]
-    fn mul(self, rhs: Q<'id, T>) -> Self::Output {
-        u128_mul_q(self, rhs)
-    }
-}
-
-// Q * u128 -> Q
-impl<'id, T> Mul<u128> for Q<'id, T>
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = Q<'id, T>;
-    #[inline]
-    fn mul(self, rhs: u128) -> Self::Output {
-        u128_mul_q(rhs, self)
-    }
-}
-
-// u128 + Q -> Q
-impl<'id, T> Add<Q<'id, T>> for u128
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = Q<'id, T>;
-    #[inline]
-    fn add(self, rhs: Q<'id, T>) -> Self::Output {
-        u128_add_q(self, rhs)
-    }
-}
-
-// L + u128 -> L
-impl<'id, T> Add<u128> for Q<'id, T>
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = Q<'id, T>;
-    #[inline]
-    fn add(self, rhs: u128) -> Self::Output {
-        u128_add_q(rhs, self)
-    }
-}
-
-pub struct C<T>(pub T); // to avoid orphan rules
-
-// C * L -> L
-impl<'id, T> Mul<L<'id, T>> for C<T>
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = L<'id, T>;
-    #[inline]
-    fn mul(self, rhs: L<'id, T>) -> Self::Output {
-        t_mul_l(self.0, rhs)
-    }
-}
-
-// L * C -> L
-impl<'id, T> Mul<C<T>> for L<'id, T>
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = L<'id, T>;
-    #[inline]
-    fn mul(self, rhs: C<T>) -> Self::Output {
-        t_mul_l(rhs.0, self)
-    }
-}
-
-// C + L -> L
-impl<'id, T> Add<L<'id, T>> for C<T>
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = L<'id, T>;
-    #[inline]
-    fn add(self, rhs: L<'id, T>) -> Self::Output {
-        t_add_l(self.0, rhs)
-    }
-}
-
-// L + C -> L
-impl<'id, T> Add<C<T>> for L<'id, T>
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = L<'id, T>;
-    #[inline]
-    fn add(self, rhs: C<T>) -> Self::Output {
-        t_add_l(rhs.0, self)
-    }
-}
-
-// C * Q -> Q
-impl<'id, T> Mul<Q<'id, T>> for C<T>
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = Q<'id, T>;
-    #[inline]
-    fn mul(self, rhs: Q<'id, T>) -> Self::Output {
-        t_mul_q(self.0, rhs)
-    }
-}
-
-// Q * C -> Q
-impl<'id, T> Mul<C<T>> for Q<'id, T>
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = Q<'id, T>;
-    #[inline]
-    fn mul(self, rhs: C<T>) -> Self::Output {
-        t_mul_q(rhs.0, self)
-    }
-}
-
-// C + Q -> Q
-impl<'id, T> Add<Q<'id, T>> for C<T>
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = Q<'id, T>;
-    #[inline]
-    fn add(self, rhs: Q<'id, T>) -> Self::Output {
-        t_add_q(self.0, rhs)
-    }
-}
-
-// Q + C -> Q
-impl<'id, T> Add<C<T>> for Q<'id, T>
-where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
-{
-    type Output = Q<'id, T>;
-    #[inline]
-    fn add(self, rhs: C<T>) -> Self::Output {
-        t_add_q(rhs.0, self)
-    }
+    q_add_l(q, t)
 }
 
 /* ========= Test ========= */
@@ -778,6 +245,8 @@ mod tests {
 
             // u128 + Q -> Q;
             let _q = 1u128 + q;
+
+            let l = &l + &l;
 
             // reduce がテープに値を出力しているはず
             // assert!(!cs.view_w().is_empty());
