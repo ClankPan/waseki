@@ -1,14 +1,11 @@
-mod aops;
 mod ar;
-mod bops;
 mod cs;
-mod rops;
+mod ops;
+#[cfg(test)]
+mod tests;
 
-pub use aops::*;
 use ar::Arena;
-pub use bops::*;
 pub use cs::*;
-pub use rops::*;
 
 use num_traits::{One, Zero};
 use std::ops::{Add, Mul};
@@ -170,14 +167,14 @@ where
     l_mul_l(q.reduce(), l)
 }
 
-/// ========== Q + Q -> L ==========
+/// ========== Q + Q -> Q ==========
 #[inline]
-fn q_add_q<'id, T: Clone>(x: Q<'id, T>, y: Q<'id, T>) -> L<'id, T>
+fn q_add_q<'id, T: Clone>(x: Q<'id, T>, y: Q<'id, T>) -> Q<'id, T>
 where
     T: Copy + Default + PartialEq + One + Zero,
 {
     debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
-    l_add_l(x.reduce(), y.reduce())
+    q_add_l(x, y.reduce())
 }
 
 /// ========== Q * Q -> Q ==========

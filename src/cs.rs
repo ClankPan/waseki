@@ -34,6 +34,15 @@ where
     }
 
     #[inline]
+    pub fn one(&self) -> L<'id, T> {
+        L::constant(self.ar, T::one())
+    }
+    #[inline]
+    pub fn zero(&self) -> L<'id, T> {
+        L::constant(self.ar, T::zero())
+    }
+
+    #[inline]
     pub fn disable(&self) {
         self.ar.disable();
     }
