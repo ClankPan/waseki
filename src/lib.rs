@@ -3,6 +3,7 @@ mod cs;
 mod ops;
 #[cfg(test)]
 mod tests;
+mod var;
 
 use ar::Arena;
 pub use cs::*;

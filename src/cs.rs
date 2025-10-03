@@ -1,4 +1,4 @@
-use crate::{L, List, N, ar::Arena};
+use crate::{L, List, N, ar::Arena, var::V};
 use num_traits::{One, Zero};
 use std::marker::PhantomData;
 
