@@ -1,89 +1,103 @@
 mod branched_list;
 mod list_machine;
 
+use num_traits::{One, Zero};
 use std::cell::{Ref, RefCell};
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::{Add, Mul};
 
 // あなたの branched_list モジュール前提
-use crate::branched_list::{BranchedList, List};
 
-/// ========== Arena（BranchedList ベース。RefCell なので &self でOK） ==========
 pub struct Arena<T> {
-    bl: RefCell<BranchedList<T>>, // 背骨 + 区間列（append-only）
-    lists: RefCell<Vec<List>>,    // List をインデックスで管理
-    w: RefCell<Vec<T>>,           // 例: R1CSテープ（用途に応じて）
+    wit: RefCell<Vec<T>>,
+    exp: RefCell<Vec<(Vec<(usize, T)>, Vec<(usize, T)>, Vec<(usize, T)>, usize)>>,
 }
 
 impl<T> Default for Arena<T> {
     fn default() -> Self {
         Self {
-            bl: RefCell::new(BranchedList::new()),
-            lists: RefCell::new(Vec::new()),
-            w: RefCell::new(Vec::new()),
+            wit: RefCell::new(Vec::new()),
+            exp: RefCell::new(Vec::new()),
         }
     }
 }
 
-impl<T> Arena<T> {
-    /// 値1個から List を作って登録し、その index を返す
+impl<T: Default + PartialEq> Arena<T> {
     #[inline]
-    fn list_from(&self, v: T) -> usize {
-        let list = self.bl.borrow_mut().make(v);
-        self.push_list(list)
-    }
-
-    #[inline]
-    fn get_list(&self, idx: usize) -> List {
-        self.lists.borrow()[idx].clone()
-    }
-    #[inline]
-    fn push_list(&self, list: List) -> usize {
-        let mut ls = self.lists.borrow_mut();
-        let idx = ls.len();
-        ls.push(list);
+    fn alloc(&self, v: T) -> usize {
+        let mut wit = self.wit.borrow_mut();
+        let idx = wit.len();
+        wit.push(v);
         idx
     }
 
     #[inline]
-    fn append_lists(&self, a_idx: usize, b_idx: usize) -> usize {
-        let a = self.get_list(a_idx);
-        let b = self.get_list(b_idx);
-        let mut bl = self.bl.borrow_mut();
-        let c = bl.append(a, b);
-        self.push_list(c)
-    }
+    fn reduce(
+        &self,
+        mut a: Vec<(usize, T)>,
+        mut b: Vec<(usize, T)>,
+        mut c: Vec<(usize, T)>,
+        v: T,
+    ) -> usize {
+        let zero = T::default();
 
-    #[inline]
-    fn empty_list(&self) -> usize {
-        // 空の List を表現したい場合：queue が空の List を直接持つ
-        // tail は未使用だが、無効インデックスを避けるため 0 を入れておく
-        self.push_list(BranchedList::<T>::empty_list())
-    }
+        // その場で 0 要素を除去（追加の Vec を作らない）
+        a.retain(|(_, x)| x != &zero);
+        b.retain(|(_, x)| x != &zero);
+        c.retain(|(_, x)| x != &zero);
 
-    // （必要なら）テープ参照
-    // #[inline]
-    // pub fn view_w(&self) -> Ref<'_, Vec<T>> {
-    //     self.w.borrow()
-    // }
+        let idx = self.alloc(v);
+        self.exp.borrow_mut().push((a, b, c, idx));
+        idx
+    }
 }
 
 /// ========== ハンドル（Copy） ==========
 /// L/Q は “インデックス + Arena参照” だけを持つ
+const N: usize = 10;
+
+type List<T> = [(usize, T); N];
+
 #[derive(Copy, Clone)]
 pub struct L<'id, T> {
     v: T,
-    l: usize,
+    l: List<T>,
     ar: &'id Arena<T>,
 }
 
 #[derive(Copy, Clone)]
 pub struct Q<'id, T> {
-    v: T,
-    a: usize,
-    b: usize,
-    c: usize,
+    a: L<'id, T>,
+    b: L<'id, T>,
+    c: L<'id, T>,
     ar: &'id Arena<T>,
+}
+
+impl<'id, T: Default + Copy> L<'id, T> {
+    #[inline]
+    fn new(ar: &'id Arena<T>) -> Self {
+        Self {
+            v: T::default(),
+            l: [(0, T::default()); N],
+            ar,
+        }
+    }
+}
+
+impl<'id, T> Q<'id, T>
+where
+    T: Copy + Add<Output = T> + Mul<Output = T> + PartialEq + Default + One + Zero,
+{
+    #[inline]
+    pub fn reduce(&self) -> L<'id, T> {
+        let (a, b, c) = (self.a, self.b, self.c);
+        let v = a.v * b.v + c.v; // A*B+C=W
+        let idx = self.ar.reduce(a.l.into(), b.l.into(), c.l.into(), v);
+        let mut l = [(0, T::zero()); N];
+        l[0] = (idx, T::one());
+        L { l, ar: self.ar, v }
+    }
 }
 
 /// ========== CS（ブランド付き：generative lifetime） ==========
@@ -93,49 +107,155 @@ pub struct CS<'id, T> {
     _brand: PhantomData<&'id mut ()>, // 不変ブランド
 }
 
-impl<'id, T: Clone> CS<'id, T> {
-    /// 値1個の L を確保（T をそのまま消費）
+impl<'id, T> CS<'id, T>
+where
+    T: Clone + Copy + Default + PartialEq + One + Zero,
+{
     #[inline]
-    pub fn allocate(&self, v: T) -> L<'id, T> {
-        let l = self.ar.list_from(v.clone());
+    pub fn alloc(&self, v: T) -> L<'id, T> {
+        let idx = self.ar.alloc(v);
+        let mut l = [(0, T::zero()); N];
+        l[0] = (idx, T::one());
         L { l, ar: self.ar, v }
     }
 
     #[inline]
     pub fn reduce(&self, q: Q<'id, T>) -> L<'id, T> {
-        // let l = self.ar.list_from(v);
-        // L { l, ar: self.ar }
-        todo!()
+        let v = q.a.v * q.b.v + q.c.v; // A*B+C=W
+        let idx = self.ar.reduce(q.a.l.into(), q.b.l.into(), q.c.l.into(), v);
+        let mut l = [(0, T::zero()); N];
+        l[0] = (idx, T::one());
+        L { l, ar: self.ar, v }
     }
 }
 
+/// ======== 補助ユーティリティ =========
+
+/// 2つの疎ベクトル（固定長）を結合して、同じ index を合算し、0 を除去
+fn merge_and_prune<T>(a: &List<T>, b: &List<T>) -> Vec<(usize, T)>
+where
+    T: Copy + Add<Output = T> + PartialEq + Default + Zero,
+{
+    let mut map: HashMap<usize, T> = HashMap::new();
+    let zero = T::zero();
+
+    for &(i, c) in a.iter().chain(b.iter()) {
+        if c == zero {
+            continue;
+        }
+        map.entry(i)
+            .and_modify(|acc| *acc = (*acc) + c)
+            .or_insert(c);
+    }
+
+    // 0 になったものを取り除く
+    map.into_iter().filter(|&(_i, ref c)| *c != zero).collect()
+}
+
+/// 可変長 Vec を固定長 List<T> にパック（余りは 0 で埋める）
+/// len > N の場合は Err(vec) を返す（呼び出し側で reduce へ）
+fn pack_list<T>(v: &[(usize, T)]) -> Result<List<T>, ()>
+where
+    T: Copy + Default + Zero,
+{
+    if v.len() > N {
+        return Err(());
+    }
+    let mut out = [(0usize, T::zero()); N];
+    for (dst, &(i, c)) in out.iter_mut().zip(v.iter()) {
+        *dst = (i, c);
+    }
+    Ok(out)
+}
+
+/// ========== L + L -> L ==========
 #[inline]
 fn l_add_l<'id, T>(x: L<'id, T>, y: L<'id, T>) -> L<'id, T>
 where
-    T: Add<Output = T>,
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
 {
     debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
-    L {
-        l: x.ar.append_lists(x.l, y.l),
-        ar: x.ar,
-        v: x.v + y.v,
+
+    let v = x.v + y.v;
+
+    // 疎和（同一 index を合算）
+    let merged = merge_and_prune(&x.l, &y.l);
+
+    // 収まるなら固定長にパック、収まらなければ reduce で witness 化
+    let l = if let Ok(packed) = pack_list(&merged) {
+        packed
+    } else {
+        let idx = x.ar.reduce(vec![], vec![], merged, v);
+        let mut tmp = [(0, T::zero()); N];
+        tmp[0] = (idx, T::one());
+        tmp
+    };
+
+    L { l, ar: x.ar, v }
+}
+
+/// ========== L * L -> Q ==========
+#[inline]
+fn l_mul_l<'id, T>(a: L<'id, T>, b: L<'id, T>) -> Q<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Mul<Output = T> + One + Zero,
+{
+    debug_assert!(std::ptr::eq(a.ar as *const _, b.ar as *const _));
+    let ar = a.ar;
+    Q {
+        a,
+        b,
+        c: L::new(ar),
+        ar,
     }
 }
 
+/// ========== Q + L -> Q ==========
 #[inline]
-fn l_mul_l<'id, T: Clone>(x: L<'id, T>, y: L<'id, T>) -> Q<'id, T>
+fn q_add_l<'id, T: Clone>(q: Q<'id, T>, l: L<'id, T>) -> Q<'id, T>
 where
-    T: Mul<Output = T>,
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
 {
-    debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
+    debug_assert!(std::ptr::eq(q.ar as *const _, l.ar as *const _));
+
+    let c = l_add_l(q.c, l);
     Q {
-        a: x.l,
-        b: y.l,
-        c: x.ar.empty_list(),
-        ar: x.ar,
-        v: x.v * y.v,
+        a: q.a,
+        b: q.b,
+        c,
+        ar: q.ar,
     }
 }
+
+/// ========== Q + Q -> L ==========
+#[inline]
+fn q_add_q<'id, T: Clone>(x: Q<'id, T>, y: Q<'id, T>) -> L<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
+    l_add_l(x.reduce(), y.reduce())
+}
+
+// if x.l++y.lの非ゼロの個数が2Nを超えたらreduceしてwitnessを割り当ててしまう
+// その場合、二回目以降のloopのwitnessの割り当て順をどうするか？
+// 最適化時にシャッフルしないでshrinkだけすれば一致するはず
+
+//
+// #[inline]
+// fn l_mul_l<'id, T: Clone>(x: L<'id, T>, y: L<'id, T>) -> Q<'id, T>
+// where
+//     T: Mul<Output = T>,
+// {
+//     debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
+//     Q {
+//         a: x.l,
+//         b: y.l,
+//         c: x.ar.empty_list(),
+//         ar: x.ar,
+//         v: x.v * y.v,
+//     }
+// }
 
 // /// ========== Arena（BranchedList ベース） ==========
 // struct Arena<T> {
