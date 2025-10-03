@@ -9,10 +9,10 @@ pub struct Arena<T> {
     exp: RefCell<Vec<(Vec<(usize, T)>, Vec<(usize, T)>, Vec<(usize, T)>, usize)>>,
 }
 
-impl<T> Default for Arena<T> {
+impl<T: One> Default for Arena<T> {
     fn default() -> Self {
         Self {
-            wit: RefCell::new(Vec::new()),
+            wit: RefCell::new(vec![T::one()]), // 定数の1
             exp: RefCell::new(Vec::new()),
         }
     }
@@ -78,6 +78,12 @@ impl<'id, T: Zero + Copy> L<'id, T> {
             ar,
         }
     }
+    #[inline]
+    fn constant(ar: &'id Arena<T>, t: T) -> Self {
+        let mut l = Self::new(ar);
+        l.l[0] = (0, t);
+        l
+    }
 }
 
 impl<'id, T> Q<'id, T>
@@ -99,6 +105,7 @@ where
 pub fn with_cs<T, R, F>(f: F) -> R
 where
     F: for<'id> FnOnce(CS<'id, T>) -> R,
+    T: One,
 {
     let arena = Arena::<T>::default();
     let cs = CS {
@@ -214,6 +221,15 @@ where
     Q { a, b, c, ar }
 }
 
+/// ========== L + Q -> Q ==========
+#[inline]
+fn l_add_q<'id, T: Clone>(l: L<'id, T>, q: Q<'id, T>) -> Q<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    q_add_l(q, l)
+}
+
 /// ========== Q * L -> Q ==========
 #[inline]
 fn q_mul_l<'id, T: Clone>(q: Q<'id, T>, l: L<'id, T>) -> Q<'id, T>
@@ -242,6 +258,166 @@ where
 {
     debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
     l_mul_l(x.reduce(), y.reduce())
+}
+
+/// ========== T * L -> L ==========
+#[inline]
+fn t_mul_l<'id, T: Clone>(t: T, l: L<'id, T>) -> L<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    let v = t * l.v;
+    let ar = l.ar;
+    let mut l = l.l;
+    for i in &mut l {
+        i.1 = t * i.1;
+    }
+    L { l, v, ar }
+}
+
+/// ========== L * T -> L ==========
+#[inline]
+fn l_mul_t<'id, T: Clone>(l: L<'id, T>, t: T) -> L<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    t_mul_l(t, l)
+}
+
+/// ========== T * Q -> Q ==========
+#[inline]
+fn t_mul_q<'id, T: Clone>(t: T, q: Q<'id, T>) -> Q<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    let a = q.a;
+    let b = t_mul_l(t, q.b);
+    let c = t_mul_l(t, q.c);
+    let ar = q.ar;
+    Q { a, b, c, ar }
+}
+
+/// ========== Q * T -> Q ==========
+#[inline]
+fn q_mul_t<'id, T: Clone>(q: Q<'id, T>, t: T) -> Q<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    t_mul_q(t, q)
+}
+
+/// ========== u128 * L -> L ==========
+#[inline]
+fn u128_mul_l<'id, T: Clone + From<u128>>(t: u128, l: L<'id, T>) -> L<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    let t = T::from(t);
+    t_mul_l(t, l)
+}
+
+/// ========== L * u128 -> L ==========
+#[inline]
+fn l_mul_u128<'id, T: Clone + From<u128>>(l: L<'id, T>, t: u128) -> L<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    u128_mul_l(t, l)
+}
+
+/// ========== u128 * Q -> Q ==========
+#[inline]
+fn u128_mul_q<'id, T: Clone + From<u128>>(t: u128, q: Q<'id, T>) -> Q<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    let t = T::from(t);
+    t_mul_q(t, q)
+}
+
+/// ========== Q * u128 -> Q ==========
+#[inline]
+fn q_mul_u128<'id, T: Clone + From<u128>>(q: Q<'id, T>, t: u128) -> Q<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    u128_mul_q(t, q)
+}
+
+/// ========== T + L -> L ==========
+#[inline]
+fn t_add_l<'id, T: Clone>(t: T, l: L<'id, T>) -> L<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    let t = L::constant(l.ar, t);
+    l_add_l(t, l)
+}
+
+/// ========== L + T -> L ==========
+#[inline]
+fn l_add_t<'id, T: Clone>(l: L<'id, T>, t: T) -> L<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    t_add_l(t, l)
+}
+
+/// ========== T + Q -> Q==========
+#[inline]
+fn t_add_q<'id, T: Clone>(t: T, q: Q<'id, T>) -> Q<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    let t = L::constant(q.ar, t);
+    l_add_q(t, q)
+}
+
+/// ========== Q + T -> Q ==========
+#[inline]
+fn q_add_t<'id, T: Clone>(q: Q<'id, T>, t: T) -> Q<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    t_add_q(t, q)
+}
+
+/// ========== u128 + L -> L ==========
+#[inline]
+fn u128_add_l<'id, T: Clone + From<u128>>(t: u128, l: L<'id, T>) -> L<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    let t = T::from(t);
+    t_add_l(t, l)
+}
+
+/// ========== L + u128 -> L ==========
+#[inline]
+fn l_add_u128<'id, T: Clone + From<u128>>(l: L<'id, T>, t: u128) -> L<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    u128_add_l(t, l)
+}
+
+/// ========== u128 + Q -> Q ==========
+#[inline]
+fn u128_add_q<'id, T: Clone + From<u128>>(t: u128, q: Q<'id, T>) -> Q<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    let t = T::from(t);
+    t_add_q(t, q)
+}
+
+/// ========== Q + u128 -> Q ==========
+#[inline]
+fn q_add_u128<'id, T: Clone + From<u128>>(q: Q<'id, T>, t: u128) -> Q<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    u128_add_q(t, q)
 }
 
 /* ========= 演算子トレイト（Copyなので owned-owned でOK） ========= */
@@ -333,6 +509,56 @@ where
     type Output = L<'id, T>;
     fn add(self, rhs: Self) -> Self::Output {
         q_add_q(self, rhs)
+    }
+}
+
+// u128 * L -> L
+impl<'id, T> Mul<L<'id, T>> for u128
+where
+    T: Copy + Mul<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = L<'id, T>;
+    #[inline]
+    fn mul(self, rhs: L<'id, T>) -> Self::Output {
+        u128_mul_l(self, rhs)
+    }
+}
+
+// L * u128 -> L
+impl<'id, T> Mul<u128> for L<'id, T>
+where
+    T: Copy + Mul<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = L<'id, T>;
+    #[inline]
+    fn mul(self, rhs: u128) -> Self::Output {
+        u128_mul_l(rhs, self)
+    }
+}
+
+pub struct C<T>(T); // to avoid orphan rules
+
+// C * L -> L
+impl<'id, T> Mul<L<'id, T>> for C<T>
+where
+    T: Copy + Mul<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = L<'id, T>;
+    #[inline]
+    fn mul(self, rhs: L<'id, T>) -> Self::Output {
+        t_mul_l(self.0, rhs)
+    }
+}
+
+// L * C -> L
+impl<'id, T> Mul<C<T>> for L<'id, T>
+where
+    T: Copy + Mul<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = L<'id, T>;
+    #[inline]
+    fn mul(self, rhs: C<T>) -> Self::Output {
+        t_mul_l(rhs.0, self)
     }
 }
 
