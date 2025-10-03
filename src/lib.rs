@@ -536,6 +536,78 @@ where
     }
 }
 
+// u128 + L -> L
+impl<'id, T> Add<L<'id, T>> for u128
+where
+    T: Copy + Add<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = L<'id, T>;
+    #[inline]
+    fn add(self, rhs: L<'id, T>) -> Self::Output {
+        u128_add_l(self, rhs)
+    }
+}
+
+// L + u128 -> L
+impl<'id, T> Add<u128> for L<'id, T>
+where
+    T: Copy + Add<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = L<'id, T>;
+    #[inline]
+    fn add(self, rhs: u128) -> Self::Output {
+        u128_add_l(rhs, self)
+    }
+}
+
+// u128 * Q -> Q
+impl<'id, T> Mul<Q<'id, T>> for u128
+where
+    T: Copy + Mul<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = Q<'id, T>;
+    #[inline]
+    fn mul(self, rhs: Q<'id, T>) -> Self::Output {
+        u128_mul_q(self, rhs)
+    }
+}
+
+// Q * u128 -> Q
+impl<'id, T> Mul<u128> for Q<'id, T>
+where
+    T: Copy + Mul<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = Q<'id, T>;
+    #[inline]
+    fn mul(self, rhs: u128) -> Self::Output {
+        u128_mul_q(rhs, self)
+    }
+}
+
+// u128 + Q -> Q
+impl<'id, T> Add<Q<'id, T>> for u128
+where
+    T: Copy + Add<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = Q<'id, T>;
+    #[inline]
+    fn add(self, rhs: Q<'id, T>) -> Self::Output {
+        u128_add_q(self, rhs)
+    }
+}
+
+// L + u128 -> L
+impl<'id, T> Add<u128> for Q<'id, T>
+where
+    T: Copy + Add<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = Q<'id, T>;
+    #[inline]
+    fn add(self, rhs: u128) -> Self::Output {
+        u128_add_q(rhs, self)
+    }
+}
+
 pub struct C<T>(T); // to avoid orphan rules
 
 // C * L -> L
@@ -559,6 +631,78 @@ where
     #[inline]
     fn mul(self, rhs: C<T>) -> Self::Output {
         t_mul_l(rhs.0, self)
+    }
+}
+
+// C + L -> L
+impl<'id, T> Add<L<'id, T>> for C<T>
+where
+    T: Copy + Mul<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = L<'id, T>;
+    #[inline]
+    fn add(self, rhs: L<'id, T>) -> Self::Output {
+        t_add_l(self.0, rhs)
+    }
+}
+
+// L + C -> L
+impl<'id, T> Add<C<T>> for L<'id, T>
+where
+    T: Copy + Mul<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = L<'id, T>;
+    #[inline]
+    fn add(self, rhs: C<T>) -> Self::Output {
+        t_add_l(rhs.0, self)
+    }
+}
+
+// C * Q -> Q
+impl<'id, T> Mul<Q<'id, T>> for C<T>
+where
+    T: Copy + Mul<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = Q<'id, T>;
+    #[inline]
+    fn mul(self, rhs: Q<'id, T>) -> Self::Output {
+        t_mul_q(self.0, rhs)
+    }
+}
+
+// Q * C -> Q
+impl<'id, T> Mul<C<T>> for Q<'id, T>
+where
+    T: Copy + Mul<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = Q<'id, T>;
+    #[inline]
+    fn mul(self, rhs: C<T>) -> Self::Output {
+        t_mul_q(rhs.0, self)
+    }
+}
+
+// C + Q -> Q
+impl<'id, T> Add<Q<'id, T>> for C<T>
+where
+    T: Copy + Mul<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = Q<'id, T>;
+    #[inline]
+    fn add(self, rhs: Q<'id, T>) -> Self::Output {
+        t_add_q(self.0, rhs)
+    }
+}
+
+// Q + C -> Q
+impl<'id, T> Add<C<T>> for Q<'id, T>
+where
+    T: Copy + Mul<Output = T> + One + Zero + PartialEq + From<u128> + Default,
+{
+    type Output = Q<'id, T>;
+    #[inline]
+    fn add(self, rhs: C<T>) -> Self::Output {
+        t_add_q(rhs.0, self)
     }
 }
 
@@ -590,7 +734,19 @@ mod tests {
             let q = q + q;
 
             // Q * Q -> Q
-            let _q = q * q;
+            let q = q * q;
+
+            // u128 + L -> L;
+            let l = 1u128 + l;
+
+            // u128 + L -> L;
+            let _l = 1u128 + l;
+
+            // u128 + Q -> Q;
+            let q = 1u128 + q;
+
+            // u128 + Q -> Q;
+            let _q = 1u128 + q;
 
             // reduce がテープに値を出力しているはず
             // assert!(!cs.view_w().is_empty());
@@ -598,7 +754,7 @@ mod tests {
     }
 
     #[test]
-    fn demo_with_branched_list() {
+    fn demo_with_goldilocks_ring_ntt() {
         demo::<GoldilocksRingNTT>()
     }
 }
