@@ -69,12 +69,12 @@ pub struct Q<'id, T> {
     ar: &'id Arena<T>,
 }
 
-impl<'id, T: Default + Copy> L<'id, T> {
+impl<'id, T: Zero + Copy> L<'id, T> {
     #[inline]
     fn new(ar: &'id Arena<T>) -> Self {
         Self {
-            v: T::default(),
-            l: [(0, T::default()); N],
+            v: T::zero(),
+            l: [(0, T::zero()); N],
             ar,
         }
     }
@@ -336,17 +336,17 @@ where
     }
 }
 
-/* ========= デモ ========= */
+/* ========= Test ========= */
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cyclotomic_rings::rings::GoldilocksRingNTT;
+    use stark_rings::Ring;
 
-    #[test]
-    fn demo_with_branched_list() {
-        with_cs::<i32, _, _>(|cs| {
-            // // L を 2 本
-            let l1 = cs.alloc(1);
-            let l2 = cs.alloc(2);
+    fn demo<R: Ring>() {
+        with_cs::<R, _, _>(|cs| {
+            let l1 = cs.alloc(R::from(1u128));
+            let l2 = cs.alloc(R::from(2u128));
 
             // L + L -> L
             let l = l1 + l2;
@@ -357,12 +357,23 @@ mod tests {
             // Q + L -> Q
             let q = q + l;
 
+            // Q * L -> Q
+            let q = q * l;
+
+            // Q + Q -> Q
+            let q = q + q;
+
             // Q * Q -> Q
-            let _q = q * (l1 * l2);
+            let _q = q * q;
 
             // reduce がテープに値を出力しているはず
             // assert!(!cs.view_w().is_empty());
         });
+    }
+
+    #[test]
+    fn demo_with_branched_list() {
+        demo::<GoldilocksRingNTT>()
     }
 }
 

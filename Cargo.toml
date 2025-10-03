@@ -6,3 +6,7 @@ edition = "2024"
 [dependencies]
 bumpalo = {version = "3.19.0", features = ["collections"]}
 num-traits = "0.2.19"
+
+[dev-dependencies]
+stark-rings = { git = "https://github.com/NethermindEth/stark-rings.git", branch = "main", default-features = false }
+cyclotomic-rings = { git = "https://github.com/NethermindEth/latticefold.git", package = "cyclotomic-rings" , default-features = false}
