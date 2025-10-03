@@ -34,12 +34,17 @@ where
     }
 
     #[inline]
+    pub fn constant(&self, t: T) -> L<'id, T> {
+        L::constant(self.ar, t)
+    }
+
+    #[inline]
     pub fn one(&self) -> L<'id, T> {
-        L::constant(self.ar, T::one())
+        self.constant(T::one())
     }
     #[inline]
     pub fn zero(&self) -> L<'id, T> {
-        L::constant(self.ar, T::zero())
+        self.constant(T::zero())
     }
 
     #[inline]

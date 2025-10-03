@@ -3,6 +3,8 @@ use std::ops::AddAssign;
 
 use crate::{L, Q};
 
+use super::binary::C;
+
 // L += L
 impl<'id, T> AddAssign for L<'id, T>
 where
@@ -61,5 +63,26 @@ where
 {
     fn add_assign(&mut self, rhs: &Self) {
         *self = &*self + rhs;
+    }
+}
+
+// L += T
+impl<'id, T> AddAssign<T> for L<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero,
+{
+    fn add_assign(&mut self, rhs: T) {
+        *self = &*self + &C(rhs);
+    }
+}
+
+// L += &T
+impl<'id, T> AddAssign<&T> for L<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero,
+{
+    #[inline]
+    fn add_assign(&mut self, rhs: &T) {
+        *self = &*self + &C(*rhs);
     }
 }

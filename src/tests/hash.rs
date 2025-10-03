@@ -6,7 +6,7 @@
 use ark_crypto_primitives::sponge::poseidon::find_poseidon_ark_and_mds;
 use ark_ff::PrimeField;
 
-use crate::{CS, L};
+use crate::{CS, L, ops::binary::C};
 
 use super::utils::pow;
 
@@ -97,8 +97,8 @@ pub struct PoseidonSponge<'a, F: PrimeField> {
 
     /// ConstraintSystem
     cs: CS<'a, F>,
-    pub ark: Vec<Vec<L<'a, F>>>,
-    pub mds: Vec<Vec<L<'a, F>>>,
+    pub ark: Vec<Vec<F>>,
+    pub mds: Vec<Vec<F>>,
 }
 
 impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
@@ -127,7 +127,7 @@ impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
             // let mut cur = self.cs.one() * 0u32;
             let mut cur = self.cs.zero();
             for (j, state_elem) in state.iter().enumerate() {
-                let term = (state_elem * &self.mds[i][j]).reduce();
+                let term = state_elem * &C(self.mds[i][j]);
                 cur += term;
             }
             new_state.push(cur);
@@ -232,24 +232,14 @@ impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
         let mode = DuplexSpongeMode::Absorbing {
             next_absorb_index: 0,
         };
-        let mds = parameters
-            .mds
-            .iter()
-            .map(|row| row.iter().map(|c| c.into()).collect())
-            .collect();
-        let ark = parameters
-            .ark
-            .iter()
-            .map(|row| row.iter().map(|c| c.into()).collect())
-            .collect();
 
         Self {
             parameters: parameters.clone(),
             state,
             mode,
             cs,
-            mds,
-            ark,
+            mds: parameters.mds.clone(),
+            ark: parameters.ark.clone(),
         }
     }
 
@@ -276,7 +266,7 @@ impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
         };
     }
     pub fn squeeze_native_field_elements(&mut self, num_elements: usize) -> Vec<L<'a, F>> {
-        let mut squeezed_elems = vec![self.cs.one() * 0u32; num_elements];
+        let mut squeezed_elems = vec![self.cs.zero(); num_elements];
         match self.mode {
             DuplexSpongeMode::Absorbing {
                 next_absorb_index: _,
@@ -333,6 +323,8 @@ pub fn circom_bn254_poseidon_canonical_config<F: PrimeField>() -> PoseidonConfig
 
 #[cfg(test)]
 mod tests {
+    use crate::with_cs;
+
     use super::{PoseidonSponge as CWPoseidonSponge, circom_bn254_poseidon_canonical_config};
     use ark_bn254::Fr;
     use ark_crypto_primitives::sponge::{
@@ -389,14 +381,15 @@ mod tests {
         let ark_hash = sponge.squeeze_native_field_elements(1)[0];
 
         // cswireのposeidon
-        let cs = CS::new_ref(Mode::Compile);
-        let config = circom_bn254_poseidon_canonical_config::<Fr>();
-        let mut sponge = CWPoseidonSponge::<Fr>::new(cs.clone(), &config);
-        for v in values.iter() {
-            sponge.absorb(&[v.into()]);
-        }
-        let cw_hash = sponge.squeeze_native_field_elements(1)[0].clone();
+        with_cs(|cs| {
+            let config = circom_bn254_poseidon_canonical_config::<Fr>();
+            let mut sponge = CWPoseidonSponge::<Fr>::new(cs.clone(), &config);
+            for v in values.iter() {
+                sponge.absorb(&[cs.constant(*v)]);
+            }
+            let cw_hash = sponge.squeeze_native_field_elements(1)[0].clone();
 
-        assert_eq!(ark_hash, cw_hash.raw())
+            assert_eq!(ark_hash, cw_hash.value())
+        });
     }
 }

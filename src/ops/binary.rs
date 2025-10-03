@@ -6,6 +6,9 @@ use crate::{
     L, Q, l_add_l, l_mul_l, q_add_l, q_add_q, q_mul_l, q_mul_q, t_add_l, t_add_q, t_mul_l, t_mul_q,
 };
 
+#[derive(Clone, Copy)]
+pub struct C<T>(pub T); // to avoid orphan rules
+
 /* ========= 演算子トレイト ========= */
 // L + L -> L
 impl<'id, T> Add for L<'id, T>
@@ -194,13 +197,10 @@ where
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct C<T>(pub T); // to avoid orphan rules
-
 // C * L -> L
 impl<'id, T> Mul<L<'id, T>> for C<T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = L<'id, T>;
     #[inline]
@@ -212,7 +212,7 @@ where
 // L * C -> L
 impl<'id, T> Mul<C<T>> for L<'id, T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = L<'id, T>;
     #[inline]
@@ -224,7 +224,7 @@ where
 // C + L -> L
 impl<'id, T> Add<L<'id, T>> for C<T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = L<'id, T>;
     #[inline]
@@ -236,7 +236,7 @@ where
 // L + C -> L
 impl<'id, T> Add<C<T>> for L<'id, T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = L<'id, T>;
     #[inline]
@@ -248,7 +248,7 @@ where
 // C * Q -> Q
 impl<'id, T> Mul<Q<'id, T>> for C<T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = Q<'id, T>;
     #[inline]
@@ -260,7 +260,7 @@ where
 // Q * C -> Q
 impl<'id, T> Mul<C<T>> for Q<'id, T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = Q<'id, T>;
     #[inline]
@@ -272,7 +272,7 @@ where
 // C + Q -> Q
 impl<'id, T> Add<Q<'id, T>> for C<T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = Q<'id, T>;
     #[inline]
@@ -284,7 +284,7 @@ where
 // Q + C -> Q
 impl<'id, T> Add<C<T>> for Q<'id, T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = Q<'id, T>;
     #[inline]
@@ -488,7 +488,7 @@ where
 // &C * &L -> L
 impl<'id, T> Mul<&L<'id, T>> for &C<T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = L<'id, T>;
     #[inline]
@@ -500,7 +500,7 @@ where
 // &L * &C -> L
 impl<'id, T> Mul<&C<T>> for &L<'id, T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = L<'id, T>;
     #[inline]
@@ -512,7 +512,7 @@ where
 // &C + &L -> L
 impl<'id, T> Add<&L<'id, T>> for &C<T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = L<'id, T>;
     #[inline]
@@ -524,7 +524,7 @@ where
 // &L + &C -> L
 impl<'id, T> Add<&C<T>> for &L<'id, T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = L<'id, T>;
     #[inline]
@@ -536,7 +536,7 @@ where
 // &C * &Q -> Q
 impl<'id, T> Mul<&Q<'id, T>> for &C<T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = Q<'id, T>;
     #[inline]
@@ -548,7 +548,7 @@ where
 // &Q * &C -> Q
 impl<'id, T> Mul<&C<T>> for &Q<'id, T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = Q<'id, T>;
     #[inline]
@@ -560,7 +560,7 @@ where
 // &C + &Q -> Q
 impl<'id, T> Add<&Q<'id, T>> for &C<T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = Q<'id, T>;
     #[inline]
@@ -572,7 +572,7 @@ where
 // &Q + &C -> Q
 impl<'id, T> Add<&C<T>> for &Q<'id, T>
 where
-    T: Copy + One + Zero + PartialEq + From<u128> + Default,
+    T: Copy + One + Zero + PartialEq + Default,
 {
     type Output = Q<'id, T>;
     #[inline]
