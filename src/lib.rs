@@ -99,6 +99,18 @@ where
 }
 
 /// ========== CS（ブランド付き：generative lifetime） ==========
+pub fn with_cs<T, R, F>(f: F) -> R
+where
+    F: for<'id> FnOnce(CS<'id, T>) -> R,
+{
+    let arena = Arena::<T>::default();
+    let cs = CS {
+        ar: &arena,
+        _brand: PhantomData::<&mut ()>,
+    };
+    f(cs)
+}
+
 #[derive(Copy, Clone)]
 pub struct CS<'id, T> {
     ar: &'id Arena<T>,
@@ -112,15 +124,6 @@ where
     #[inline]
     pub fn alloc(&self, v: T) -> L<'id, T> {
         let idx = self.ar.alloc(v);
-        let mut l = [(0, T::zero()); N];
-        l[0] = (idx, T::one());
-        L { l, ar: self.ar, v }
-    }
-
-    #[inline]
-    pub fn reduce(&self, q: Q<'id, T>) -> L<'id, T> {
-        let v = q.a.v * q.b.v + q.c.v; // A*B+C=W
-        let idx = self.ar.reduce(q.a.l.into(), q.b.l.into(), q.c.l.into(), v);
         let mut l = [(0, T::zero()); N];
         l[0] = (idx, T::one());
         L { l, ar: self.ar, v }
@@ -232,6 +235,138 @@ where
 {
     debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
     l_add_l(x.reduce(), y.reduce())
+}
+
+/// ========== Q * Q -> Q ==========
+#[inline]
+fn q_mul_q<'id, T: Clone>(x: Q<'id, T>, y: Q<'id, T>) -> Q<'id, T>
+where
+    T: Copy + Clone + Default + PartialEq + Add<Output = T> + One + Zero,
+{
+    debug_assert!(std::ptr::eq(x.ar as *const _, y.ar as *const _));
+    l_mul_l(x.reduce(), y.reduce())
+}
+
+/* ========= 演算子トレイト（Copyなので owned-owned でOK） ========= */
+// L + L -> L
+impl<'id, T> Add for L<'id, T>
+where
+    T: Default + Clone + Copy + One + Zero + PartialEq,
+{
+    type Output = L<'id, T>;
+    fn add(self, rhs: Self) -> Self::Output {
+        l_add_l(self, rhs)
+    }
+}
+
+// L * L -> Q
+impl<'id, T> Mul for L<'id, T>
+where
+    T: Default + Clone + Copy + One + Zero + PartialEq,
+{
+    type Output = Q<'id, T>;
+    fn mul(self, rhs: Self) -> Self::Output {
+        l_mul_l(self, rhs)
+    }
+}
+
+// L + Q -> Q
+impl<'id, T> Add<Q<'id, T>> for L<'id, T>
+where
+    T: Default + Clone + Copy + One + Zero + PartialEq,
+{
+    type Output = Q<'id, T>;
+    #[inline]
+    fn add(self, rhs: Q<'id, T>) -> Self::Output {
+        q_add_l(rhs, self)
+    }
+}
+
+// L * Q -> Q
+impl<'id, T> Mul<Q<'id, T>> for L<'id, T>
+where
+    T: Default + Clone + Copy + One + Zero + PartialEq,
+{
+    type Output = Q<'id, T>;
+    #[inline]
+    fn mul(self, rhs: Q<'id, T>) -> Self::Output {
+        // Q * L の実装をそのまま利用
+        q_mul_l(rhs, self)
+    }
+}
+
+// Q + L -> Q
+impl<'id, T> Add<L<'id, T>> for Q<'id, T>
+where
+    T: Default + Clone + Copy + One + Zero + PartialEq,
+{
+    type Output = Q<'id, T>;
+    fn add(self, rhs: L<'id, T>) -> Self::Output {
+        q_add_l(self, rhs)
+    }
+}
+
+// Q * L -> Q
+impl<'id, T> Mul<L<'id, T>> for Q<'id, T>
+where
+    T: Default + Clone + Copy + One + Zero + PartialEq,
+{
+    type Output = Q<'id, T>;
+    fn mul(self, rhs: L<'id, T>) -> Self::Output {
+        q_mul_l(self, rhs)
+    }
+}
+
+// Q * Q -> Q
+impl<'id, T> Mul for Q<'id, T>
+where
+    T: Default + Clone + Copy + One + Zero + PartialEq,
+{
+    type Output = Q<'id, T>;
+    fn mul(self, rhs: Self) -> Self::Output {
+        q_mul_q(self, rhs)
+    }
+}
+
+// Q + Q -> Q
+impl<'id, T: Clone> Add for Q<'id, T>
+where
+    T: Default + Clone + Copy + One + Zero + PartialEq,
+{
+    type Output = L<'id, T>;
+    fn add(self, rhs: Self) -> Self::Output {
+        q_add_q(self, rhs)
+    }
+}
+
+/* ========= デモ ========= */
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn demo_with_branched_list() {
+        with_cs::<i32, _, _>(|cs| {
+            // // L を 2 本
+            let l1 = cs.alloc(1);
+            let l2 = cs.alloc(2);
+
+            // L + L -> L
+            let l = l1 + l2;
+
+            // L * L -> Q
+            let q = l * l1;
+
+            // Q + L -> Q
+            let q = q + l;
+
+            // Q * Q -> Q
+            let _q = q * (l1 * l2);
+
+            // reduce がテープに値を出力しているはず
+            // assert!(!cs.view_w().is_empty());
+        });
+    }
 }
 
 // if x.l++y.lの非ゼロの個数が2Nを超えたらreduceしてwitnessを割り当ててしまう
