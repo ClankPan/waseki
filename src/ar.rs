@@ -1,6 +1,8 @@
 use num_traits::{One, Zero};
 use std::cell::RefCell;
 
+use crate::List;
+
 pub struct Arena<T> {
     wit: RefCell<Vec<T>>,
     exp: RefCell<Vec<(Vec<(usize, T)>, Vec<(usize, T)>, Vec<(usize, T)>, usize)>>,
@@ -35,14 +37,12 @@ impl<T: Default + PartialEq + One + Zero> Arena<T> {
     }
 
     #[inline]
-    pub fn reduce(
-        &self,
-        mut a: Vec<(usize, T)>,
-        mut b: Vec<(usize, T)>,
-        mut c: Vec<(usize, T)>,
-        v: T,
-    ) -> usize {
+    pub fn reduce(&self, a: List<T>, b: List<T>, c: List<T>, v: T) -> usize {
         let zero = T::default();
+
+        let mut a: Vec<_> = a.list.into();
+        let mut b: Vec<_> = b.list.into();
+        let mut c: Vec<_> = c.list.into();
 
         // その場で 0 要素を除去（追加の Vec を作らない）
         a.retain(|(_, x)| x != &zero);

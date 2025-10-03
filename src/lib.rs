@@ -17,7 +17,32 @@ use std::ops::{Add, Mul};
 
 const N: usize = 10;
 
-type List<T> = [(usize, T); N];
+#[derive(Copy, Clone)]
+struct List<T> {
+    list: [(usize, T); N],
+    len: usize,
+}
+
+impl<T: Copy + Zero> Default for List<T> {
+    fn default() -> Self {
+        Self {
+            list: [(0, T::zero()); N],
+            len: 0,
+        }
+    }
+}
+
+impl<T: Copy + Zero> List<T> {
+    fn new(v: (usize, T)) -> Self {
+        let mut l = Self::default();
+        l.push(v);
+        l
+    }
+    fn push(&mut self, v: (usize, T)) {
+        self.list[self.len] = v;
+        self.len += 1;
+    }
+}
 
 #[derive(Copy, Clone)]
 pub struct L<'id, T> {
@@ -39,14 +64,14 @@ impl<'id, T: Zero + Copy> L<'id, T> {
     fn new(ar: &'id Arena<T>) -> Self {
         Self {
             v: T::zero(),
-            l: [(0, T::zero()); N],
+            l: List::default(),
             ar,
         }
     }
     #[inline]
     fn constant(ar: &'id Arena<T>, t: T) -> Self {
         let mut l = Self::new(ar);
-        l.l[0] = (0, t);
+        l.l.push((0, t));
         l
     }
 
@@ -65,8 +90,7 @@ where
         let (a, b, c) = (self.a, self.b, self.c);
         let v = a.v * b.v + c.v; // A*B+C=W
         let idx = self.ar.reduce(a.l.into(), b.l.into(), c.l.into(), v);
-        let mut l = [(0, T::zero()); N];
-        l[0] = (idx, T::one());
+        let l = List::new((idx, T::one()));
         L { l, ar: self.ar, v }
     }
 
@@ -93,10 +117,8 @@ where
     let l = if let Ok(packed) = pack_list(&merged) {
         packed
     } else {
-        let idx = x.ar.reduce(vec![], vec![], merged, v);
-        let mut tmp = [(0, T::zero()); N];
-        tmp[0] = (idx, T::one());
-        tmp
+        let idx = x.ar.reduce(List::default(), List::default(), merged, v);
+        List::new((idx, T::one()))
     };
 
     L { l, ar: x.ar, v }
