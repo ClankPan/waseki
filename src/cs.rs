@@ -1,4 +1,4 @@
-use crate::{L, List, N, ar::Arena, var::V};
+use crate::{L, ar::Arena, var::V};
 use num_traits::{One, Zero};
 use std::{marker::PhantomData, ops::Neg};
 
@@ -10,15 +10,15 @@ where
 {
     let arena = Arena::<T>::default();
     let cs = CS {
-        ar: &arena,
+        ar: arena,
         _brand: PhantomData::<&mut ()>,
     };
     f(cs)
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct CS<'id, T> {
-    pub ar: &'id Arena<T>,
+    pub ar: Arena<T>,
     _brand: PhantomData<&'id mut ()>, // 不変ブランド
 }
 
@@ -27,13 +27,13 @@ where
     T: Clone + Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
 {
     #[inline]
-    pub fn alloc(&self, v: T) -> V<'id, T> {
-        V::L(L::alloc(self.ar, v))
+    pub fn alloc(&'id self, v: T) -> V<'id, T> {
+        V::L(L::alloc(&self.ar, v))
     }
 
     #[inline]
-    pub fn constant(&self, t: T) -> V<'id, T> {
-        V::L(L::constant(self.ar, t))
+    pub fn constant(&'id self, t: T) -> V<'id, T> {
+        V::L(L::constant(&self.ar, t))
     }
 
     #[inline]
@@ -48,11 +48,11 @@ where
     }
 
     #[inline]
-    pub fn one(&self) -> V<'id, T> {
+    pub fn one(&'id self) -> V<'id, T> {
         self.constant(T::one())
     }
     #[inline]
-    pub fn zero(&self) -> V<'id, T> {
+    pub fn zero(&'id self) -> V<'id, T> {
         self.constant(T::zero())
     }
 

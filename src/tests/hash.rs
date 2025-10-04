@@ -102,16 +102,16 @@ pub struct PoseidonSponge<'a, F: PrimeField> {
 }
 
 impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
-    fn apply_s_box(&self, state: &mut [V<'a, F>], is_full_round: bool) {
+    fn apply_s_box(&'a self, state: &mut [V<'a, F>], is_full_round: bool) {
         // Full rounds apply the S Box (x^alpha) to every element of state
         if is_full_round {
             for elem in state {
-                *elem = pow(self.cs.clone(), elem.clone(), self.parameters.alpha);
+                *elem = pow(&self.cs, elem.clone(), self.parameters.alpha);
             }
         }
         // Partial rounds apply the S Box (x^alpha) to just the first element of state
         else {
-            state[0] = pow(self.cs.clone(), state[0].clone(), self.parameters.alpha);
+            state[0] = pow(&self.cs, state[0].clone(), self.parameters.alpha);
         }
     }
 
@@ -121,7 +121,7 @@ impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
         }
     }
 
-    fn apply_mds(&self, state: &mut [V<'a, F>]) {
+    fn apply_mds(&'a self, state: &mut [V<'a, F>]) {
         let mut new_state = Vec::new();
         for i in 0..state.len() {
             // let mut cur = self.cs.one() * 0u32;
@@ -135,7 +135,7 @@ impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
         state.clone_from_slice(&new_state[..state.len()])
     }
 
-    fn permute(&mut self) {
+    fn permute(&'a mut self) {
         let full_rounds_over_2 = self.parameters.full_rounds / 2;
         let mut state = self.state.clone();
         for i in 0..full_rounds_over_2 {

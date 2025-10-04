@@ -4,7 +4,7 @@ use std::{cell::RefCell, collections::HashMap, ops::Add};
 type M<T> = HashMap<usize, T>;
 type Exp<T> = (M<T>, M<T>, M<T>, Option<usize>);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Arena<T> {
     pub(crate) wit: RefCell<Vec<T>>,
     pub(crate) exp: RefCell<Vec<Exp<T>>>,
