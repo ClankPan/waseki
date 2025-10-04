@@ -1,7 +1,7 @@
 use num_traits::{One, Zero};
 use std::{
     iter::{Product, Sum},
-    ops::{Add, AddAssign, Mul},
+    ops::{Add, AddAssign, Mul, Neg, Sub},
 };
 
 use crate::{
@@ -20,8 +20,7 @@ impl<'id, T> V<'id, T>
 where
     T: One + Zero + Copy,
 {
-    pub fn new(ar: &'id Arena<T>) -> Self {
-        // Self::L(L::new(ar))
+    pub fn new() -> Self {
         Self::N
     }
     pub fn value(&self) -> T {
@@ -29,6 +28,22 @@ where
             V::L(l) => l.value(),
             V::Q(q) => q.value(),
             V::N => T::zero(),
+        }
+    }
+}
+
+impl<'id, T> Neg for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
+{
+    type Output = V<'id, T>;
+
+    fn neg(self) -> Self::Output {
+        let minus = -T::one();
+        match self {
+            V::N => V::N,
+            V::L(l) => V::L(t_mul_l(minus, l)),
+            V::Q(q) => V::Q(t_mul_q(minus, q)),
         }
     }
 }
@@ -51,6 +66,17 @@ where
             (V::L(l), V::N) => V::L(l),
             (V::Q(q), V::N) => V::Q(q),
         }
+    }
+}
+
+// V - V -> V
+impl<'id, T> Sub for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
+{
+    type Output = V<'id, T>;
+    fn sub(self, rhs: Self) -> Self::Output {
+        self + rhs.neg()
     }
 }
 
@@ -83,6 +109,17 @@ where
     type Output = V<'id, T>;
     fn add(self, rhs: Self) -> Self::Output {
         *self + *rhs
+    }
+}
+
+// &V - &V -> V
+impl<'id, T> Sub for &V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
+{
+    type Output = V<'id, T>;
+    fn sub(self, rhs: Self) -> Self::Output {
+        *self + rhs.neg()
     }
 }
 

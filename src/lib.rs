@@ -1,6 +1,7 @@
 mod ar;
 mod cs;
 mod ops;
+mod r1cs;
 #[cfg(test)]
 mod tests;
 mod var;
@@ -109,7 +110,8 @@ where
         let (a, b, c) = (self.a, self.b, self.c);
         let v = a.v * b.v + c.v; // A*B+C=W
         let idx = self.ar.alloc(v);
-        self.ar.exp(a.l.to_vec(), b.l.to_vec(), c.l.to_vec(), idx);
+        self.ar
+            .wire(a.l.to_vec(), b.l.to_vec(), c.l.to_vec(), Some(idx));
         let l = List::new((idx, T::one()));
         L { l, ar: self.ar, v }
     }
@@ -133,7 +135,12 @@ where
 
     let l = if x.l.len() + y.l.len() > N {
         let idx = ar.alloc(v);
-        ar.exp(vec![], vec![], [x.l.to_vec(), y.l.to_vec()].concat(), idx);
+        ar.wire(
+            vec![],
+            vec![],
+            [x.l.to_vec(), y.l.to_vec()].concat(),
+            Some(idx),
+        );
         List::new((idx, T::one()))
     } else {
         x.l.merge(y.l);

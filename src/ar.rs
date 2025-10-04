@@ -2,11 +2,12 @@ use num_traits::{One, Zero};
 use std::{cell::RefCell, collections::HashMap, ops::Add};
 
 type M<T> = HashMap<usize, T>;
+type Exp<T> = (M<T>, M<T>, M<T>, Option<usize>);
 
 #[derive(Debug)]
 pub struct Arena<T> {
     pub(crate) wit: RefCell<Vec<T>>,
-    pub(crate) exp: RefCell<Vec<(M<T>, M<T>, M<T>, usize)>>,
+    pub(crate) exp: RefCell<Vec<Exp<T>>>,
 }
 
 impl<T: One> Default for Arena<T> {
@@ -38,7 +39,13 @@ impl<T: Copy + One + Zero> Arena<T> {
     }
 
     #[inline]
-    pub fn exp(&self, a: Vec<(usize, T)>, b: Vec<(usize, T)>, c: Vec<(usize, T)>, idx: usize) {
+    pub fn wire(
+        &self,
+        a: Vec<(usize, T)>,
+        b: Vec<(usize, T)>,
+        c: Vec<(usize, T)>,
+        idx: Option<usize>,
+    ) {
         let (a, b, c) = (sum_by_key(a), sum_by_key(b), sum_by_key(c));
         self.exp.borrow_mut().push((a, b, c, idx));
     }

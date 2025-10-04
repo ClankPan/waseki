@@ -1,6 +1,6 @@
 use crate::{L, List, N, ar::Arena, var::V};
 use num_traits::{One, Zero};
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops::Neg};
 
 /// ========== CS（ブランド付き：generative lifetime） ==========
 pub fn with_cs<T, R, F>(f: F) -> R
@@ -24,7 +24,7 @@ pub struct CS<'id, T> {
 
 impl<'id, T> CS<'id, T>
 where
-    T: Clone + Copy + Default + PartialEq + One + Zero,
+    T: Clone + Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
 {
     #[inline]
     pub fn alloc(&self, v: T) -> V<'id, T> {
@@ -34,6 +34,17 @@ where
     #[inline]
     pub fn constant(&self, t: T) -> V<'id, T> {
         V::L(L::constant(self.ar, t))
+    }
+
+    #[inline]
+    pub fn equal(&self, x: V<'id, T>, y: V<'id, T>) {
+        let v = x - y;
+        let (a, b, c, idx) = match v {
+            V::N => return,
+            V::L(l) => (vec![], vec![], l.l.to_vec(), None),
+            V::Q(q) => (q.a.l.to_vec(), q.b.l.to_vec(), q.c.l.to_vec(), None),
+        };
+        self.ar.wire(a, b, c, idx);
     }
 
     #[inline]
@@ -53,5 +64,10 @@ where
     #[inline]
     pub fn enable(&self) {
         self.ar.enable();
+    }
+
+    #[inline]
+    pub fn export(self) -> Arena<T> {
+        self.ar
     }
 }
