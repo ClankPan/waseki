@@ -5,8 +5,7 @@ use std::{
 };
 
 use crate::{
-    L, Q, ar::Arena, l_add_l, l_mul_l, q_add_l, q_add_q, q_mul_l, q_mul_q, t_add_l, t_add_q,
-    t_mul_l, t_mul_q,
+    L, Q, l_add_l, l_mul_l, q_add_l, q_add_q, q_mul_l, q_mul_q, t_add_l, t_add_q, t_mul_l, t_mul_q,
 };
 
 #[derive(Copy, Clone, Debug)]

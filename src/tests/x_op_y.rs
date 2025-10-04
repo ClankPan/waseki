@@ -1,9 +1,6 @@
 use ark_bn254::Fr;
 
-use crate::{
-    L, N, Q, l_add_l, l_mul_l, q_add_l, q_add_q, q_mul_l, q_mul_q, t_add_l, t_add_q, t_mul_l,
-    t_mul_q, with_cs,
-};
+use crate::{L, N, l_add_l, with_cs};
 
 #[test]
 fn test_l_add_l() {

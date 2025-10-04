@@ -27,7 +27,7 @@ fn demo<R: Ring>() {
         let q = q + q;
 
         // Q * Q -> Q
-        let q = q * q;
+        let _q = q * q;
 
         // // u128 + L -> L;
         // let l = 1u128 + l;

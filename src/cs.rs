@@ -6,19 +6,22 @@ use std::{marker::PhantomData, ops::Neg};
 pub fn with_cs<T, R, F>(f: F) -> R
 where
     F: for<'id> FnOnce(CS<'id, T>) -> R,
-    T: One,
+    T: One + Zero + Copy,
 {
     let arena = Arena::<T>::default();
     let cs = CS {
-        ar: arena,
+        ar: &arena,
         _brand: PhantomData::<&mut ()>,
     };
-    f(cs)
+    let r = f(cs);
+    // let (wit, exp) = arena.into_inner();
+
+    return r;
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct CS<'id, T> {
-    pub ar: Arena<T>,
+    pub ar: &'id Arena<T>,
     _brand: PhantomData<&'id mut ()>, // 不変ブランド
 }
 
@@ -27,13 +30,13 @@ where
     T: Clone + Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
 {
     #[inline]
-    pub fn alloc(&'id self, v: T) -> V<'id, T> {
-        V::L(L::alloc(&self.ar, v))
+    pub fn alloc(&self, v: T) -> V<'id, T> {
+        V::L(L::alloc(self.ar, v))
     }
 
     #[inline]
-    pub fn constant(&'id self, t: T) -> V<'id, T> {
-        V::L(L::constant(&self.ar, t))
+    pub fn constant(&self, t: T) -> V<'id, T> {
+        V::L(L::constant(self.ar, t))
     }
 
     #[inline]
@@ -48,11 +51,11 @@ where
     }
 
     #[inline]
-    pub fn one(&'id self) -> V<'id, T> {
+    pub fn one(&self) -> V<'id, T> {
         self.constant(T::one())
     }
     #[inline]
-    pub fn zero(&'id self) -> V<'id, T> {
+    pub fn zero(&self) -> V<'id, T> {
         self.constant(T::zero())
     }
 
@@ -64,10 +67,5 @@ where
     #[inline]
     pub fn enable(&self) {
         self.ar.enable();
-    }
-
-    #[inline]
-    pub fn export(self) -> Arena<T> {
-        self.ar
     }
 }

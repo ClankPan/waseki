@@ -102,16 +102,16 @@ pub struct PoseidonSponge<'a, F: PrimeField> {
 }
 
 impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
-    fn apply_s_box(&'a self, state: &mut [V<'a, F>], is_full_round: bool) {
+    fn apply_s_box(&self, state: &mut [V<'a, F>], is_full_round: bool) {
         // Full rounds apply the S Box (x^alpha) to every element of state
         if is_full_round {
             for elem in state {
-                *elem = pow(&self.cs, elem.clone(), self.parameters.alpha);
+                *elem = pow(self.cs.clone(), elem.clone(), self.parameters.alpha);
             }
         }
         // Partial rounds apply the S Box (x^alpha) to just the first element of state
         else {
-            state[0] = pow(&self.cs, state[0].clone(), self.parameters.alpha);
+            state[0] = pow(self.cs.clone(), state[0].clone(), self.parameters.alpha);
         }
     }
 
@@ -121,7 +121,7 @@ impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
         }
     }
 
-    fn apply_mds(&'a self, state: &mut [V<'a, F>]) {
+    fn apply_mds(&self, state: &mut [V<'a, F>]) {
         let mut new_state = Vec::new();
         for i in 0..state.len() {
             // let mut cur = self.cs.one() * 0u32;
@@ -135,7 +135,7 @@ impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
         state.clone_from_slice(&new_state[..state.len()])
     }
 
-    fn permute(&'a mut self) {
+    fn permute(&mut self) {
         let full_rounds_over_2 = self.parameters.full_rounds / 2;
         let mut state = self.state.clone();
         for i in 0..full_rounds_over_2 {
@@ -334,7 +334,8 @@ mod tests {
             find_poseidon_ark_and_mds,
         },
     };
-    use ark_ff::PrimeField;
+    use ark_ff::{PrimeField, UniformRand};
+    use rand::rng;
 
     /// This Poseidon configuration generator produces a Poseidon configuration with custom parameters
     pub fn poseidon_custom_config<F: PrimeField>(
@@ -371,7 +372,33 @@ mod tests {
 
     #[test]
     pub fn test_poseidon() {
-        let values: Vec<Fr> = (0..10).map(Fr::from).collect();
+        let values: Vec<Fr> = (0..1000).map(Fr::from).collect();
+
+        // Arkのposeidon
+        let mut sponge = ArkPoseidonSponge::<Fr>::new(&poseidon_canonical_config());
+        for v in values.iter() {
+            sponge.absorb(v);
+        }
+        let ark_hash = sponge.squeeze_native_field_elements(1)[0];
+
+        // cswireのposeidon
+        with_cs(|cs| {
+            let config = circom_bn254_poseidon_canonical_config::<Fr>();
+            let mut sponge = CWPoseidonSponge::<Fr>::new(cs.clone(), &config);
+            for v in values.iter() {
+                sponge.absorb(&[cs.constant(*v)]);
+            }
+            let cw_hash = sponge.squeeze_native_field_elements(1)[0].clone();
+
+            assert_eq!(ark_hash, cw_hash.value())
+        });
+    }
+
+    #[test]
+    pub fn test_poseidon_rand() {
+        // ランダム生成（非決定的）
+        let mut rng = ark_std::test_rng();
+        let values: Vec<Fr> = (0..1000).map(|_| Fr::rand(&mut rng)).collect();
 
         // Arkのposeidon
         let mut sponge = ArkPoseidonSponge::<Fr>::new(&poseidon_canonical_config());

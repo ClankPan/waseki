@@ -1,8 +1,8 @@
 use num_traits::{One, Zero};
 use std::{cell::RefCell, collections::HashMap, ops::Add};
 
-type M<T> = HashMap<usize, T>;
-type Exp<T> = (M<T>, M<T>, M<T>, Option<usize>);
+pub type M<T> = HashMap<usize, T>;
+pub type Exp<T> = (M<T>, M<T>, M<T>, Option<usize>);
 
 #[derive(Debug, Clone)]
 pub struct Arena<T> {
@@ -48,6 +48,13 @@ impl<T: Copy + One + Zero> Arena<T> {
     ) {
         let (a, b, c) = (sum_by_key(a), sum_by_key(b), sum_by_key(c));
         self.exp.borrow_mut().push((a, b, c, idx));
+    }
+
+    #[inline]
+    pub fn into_inner(self) -> (Vec<T>, Vec<Exp<T>>) {
+        let wit = self.wit.into_inner();
+        let exp = self.exp.into_inner();
+        (wit, exp)
     }
 }
 

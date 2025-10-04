@@ -1,7 +1,7 @@
 use crate::{CS, var::V, with_cs};
 use ark_ff::Field;
 
-pub fn pow<'a, F: Field>(cs: &'a CS<'a, F>, mut base: V<'a, F>, mut exp: u64) -> V<'a, F> {
+pub fn pow<'a, F: Field>(cs: CS<'a, F>, mut base: V<'a, F>, mut exp: u64) -> V<'a, F> {
     let mut pow = cs.one();
     while exp > 0 {
         if exp % 2 == 1 {
@@ -20,8 +20,8 @@ pub fn test_pow() {
 
     with_cs(|cs| {
         let a = cs.alloc(Fr::from(2));
-        let b = pow(&cs, a, 3);
+        let b = pow(cs, a, 3);
 
         assert_eq!(b.value(), Fr::from(8));
-    })
+    });
 }
