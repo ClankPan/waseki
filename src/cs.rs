@@ -18,7 +18,7 @@ where
 
 #[derive(Copy, Clone)]
 pub struct CS<'id, T> {
-    ar: &'id Arena<T>,
+    pub ar: &'id Arena<T>,
     _brand: PhantomData<&'id mut ()>, // 不変ブランド
 }
 
@@ -28,9 +28,7 @@ where
 {
     #[inline]
     pub fn alloc(&self, v: T) -> V<'id, T> {
-        let idx = self.ar.alloc(v);
-        let l = List::new((idx, T::one()));
-        V::L(L { v, l, ar: self.ar })
+        V::L(L::alloc(self.ar, v))
     }
 
     #[inline]

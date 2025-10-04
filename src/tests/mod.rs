@@ -1,5 +1,6 @@
 mod hash;
 mod utils;
+mod x_op_y;
 
 use super::*;
 use cyclotomic_rings::rings::GoldilocksRingNTT;

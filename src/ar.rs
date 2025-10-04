@@ -3,8 +3,8 @@ use std::cell::RefCell;
 
 #[derive(Debug)]
 pub struct Arena<T> {
-    wit: RefCell<Vec<T>>,
-    exp: RefCell<Vec<(Vec<(usize, T)>, Vec<(usize, T)>, Vec<(usize, T)>, usize)>>,
+    pub(crate) wit: RefCell<Vec<T>>,
+    pub(crate) exp: RefCell<Vec<(Vec<(usize, T)>, Vec<(usize, T)>, Vec<(usize, T)>, usize)>>,
 }
 
 impl<T: One> Default for Arena<T> {

@@ -78,6 +78,14 @@ impl<'id, T: One + Zero + Copy> L<'id, T> {
             ar,
         }
     }
+
+    #[inline]
+    fn alloc(ar: &'id Arena<T>, v: T) -> Self {
+        let idx = ar.alloc(v);
+        let l = List::new((idx, T::one()));
+        L { v, l, ar }
+    }
+
     #[inline]
     fn constant(ar: &'id Arena<T>, t: T) -> Self {
         let mut l = Self::new(ar);
@@ -123,7 +131,7 @@ where
     let v = x.v + y.v;
     let ar = x.ar;
 
-    let l = if x.l.len() + y.l.len() > 2 * N {
+    let l = if x.l.len() + y.l.len() > N {
         let idx = ar.alloc(v);
         ar.exp(vec![], vec![], [x.l.to_vec(), y.l.to_vec()].concat(), idx);
         List::new((idx, T::one()))
