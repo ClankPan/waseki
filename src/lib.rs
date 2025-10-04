@@ -1,7 +1,7 @@
 mod ar;
 mod cs;
 mod ops;
-mod r1cs;
+// mod r1cs;
 #[cfg(test)]
 mod tests;
 mod var;
@@ -70,7 +70,7 @@ pub struct Q<'id, T> {
     ar: &'id Arena<T>,
 }
 
-impl<'id, T: One + Zero + Copy> L<'id, T> {
+impl<'id, T: One + Zero + Copy + PartialEq> L<'id, T> {
     #[inline]
     fn new(ar: &'id Arena<T>) -> Self {
         Self {
@@ -103,7 +103,7 @@ impl<'id, T: One + Zero + Copy> L<'id, T> {
 
 impl<'id, T> Q<'id, T>
 where
-    T: Copy + Add<Output = T> + Mul<Output = T> + One + Zero,
+    T: Copy + Add<Output = T> + Mul<Output = T> + One + Zero + PartialEq,
 {
     #[inline]
     pub fn reduce(&self) -> L<'id, T> {

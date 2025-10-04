@@ -13,7 +13,10 @@ where
 {
     let (_wit, mut exp) = ar.into_inner();
 
+    println!("exp len: {}", exp.len());
+
     // 1) 0の削除
+    println!("1. reduce zero");
     exp.iter_mut().for_each(|(a, b, c, _)| {
         clean_zero(a);
         clean_zero(b);
@@ -21,6 +24,7 @@ where
     });
 
     // 2) 積の線形化（片側が {0:c} だけなら C に吸収）
+    println!("2. linearize");
     exp.iter_mut().for_each(|(a, b, c, _)| {
         if let Some(l) = linearize(a, b) {
             merge_maps(c, &l);
@@ -30,6 +34,7 @@ where
     });
 
     // 3) 自己参照ガード（右辺 i が A/B/C に出ていないか）
+    println!("3. check recursive");
     exp.iter().for_each(|(a, b, c, i)| {
         if let Some(i) = i {
             let bad = a.contains_key(i) || b.contains_key(i) || c.contains_key(i);
@@ -38,6 +43,7 @@ where
     });
 
     // 4) 線形定義の収集（A=∅, B=∅）
+    println!("4. collect linears");
     let mut linears: HashMap<usize, M<T>> = HashMap::new();
     for (a, b, c, i) in &exp {
         if a.is_empty() && b.is_empty() {
@@ -49,6 +55,7 @@ where
     inline_linears(&mut linears);
 
     // 5) 収集した線形定義を全制約の A/B/C に代入
+    println!("5. inline linears");
     for (a, b, c, _) in exp.iter_mut() {
         apply_subst(a, &linears);
         apply_subst(b, &linears);
@@ -59,6 +66,7 @@ where
     }
 
     // 6) 一度も参照されない「定義専用」制約を削除
+    println!("6. delete used");
     let used = {
         let mut s = std::collections::HashSet::new();
         for (a, b, c, _) in &exp {
@@ -74,7 +82,10 @@ where
     });
 
     // 6) 重複制約の削除
+    println!("7. dedup exp");
     let exp = dedup_exp(exp);
+
+    println!("optimized exp len: {}", exp.len());
 }
 
 /// A または B のどちらかが {0:c} だけなら、もう片方を c 倍して返す

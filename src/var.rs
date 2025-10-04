@@ -17,7 +17,7 @@ pub enum V<'id, T> {
 
 impl<'id, T> V<'id, T>
 where
-    T: One + Zero + Copy,
+    T: One + Zero + Copy + PartialEq,
 {
     pub fn new() -> Self {
         Self::N

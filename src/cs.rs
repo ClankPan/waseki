@@ -6,7 +6,7 @@ use std::{marker::PhantomData, ops::Neg};
 pub fn with_cs<T, R, F>(f: F) -> R
 where
     F: for<'id> FnOnce(CS<'id, T>) -> R,
-    T: One + Zero + Copy,
+    T: One + Zero + Copy + PartialEq,
 {
     let arena = Arena::<T>::default();
     let cs = CS {
@@ -14,7 +14,8 @@ where
         _brand: PhantomData::<&mut ()>,
     };
     let r = f(cs);
-    // let (wit, exp) = arena.into_inner();
+
+    // optimize(arena);
 
     return r;
 }
