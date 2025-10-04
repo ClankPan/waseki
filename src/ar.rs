@@ -1,8 +1,7 @@
 use num_traits::{One, Zero};
 use std::cell::RefCell;
 
-use crate::List;
-
+#[derive(Debug)]
 pub struct Arena<T> {
     wit: RefCell<Vec<T>>,
     exp: RefCell<Vec<(Vec<(usize, T)>, Vec<(usize, T)>, Vec<(usize, T)>, usize)>>,
@@ -17,7 +16,7 @@ impl<T: One> Default for Arena<T> {
     }
 }
 
-impl<T: Default + PartialEq + One + Zero> Arena<T> {
+impl<T: One + Zero> Arena<T> {
     #[inline]
     pub fn disable(&self) {
         self.wit.borrow_mut()[0] = T::zero(); // 定数項をゼロに

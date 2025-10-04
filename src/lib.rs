@@ -13,7 +13,7 @@ use std::ops::{Add, Mul};
 
 const N: usize = 10;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct List<T> {
     list: [(usize, T); N],
     len: usize,
@@ -54,14 +54,14 @@ impl<T: Copy + One + Zero> List<T> {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct L<'id, T> {
     v: T,
     l: List<T>,
     ar: &'id Arena<T>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Q<'id, T> {
     a: L<'id, T>,
     b: L<'id, T>,
@@ -82,6 +82,7 @@ impl<'id, T: One + Zero + Copy> L<'id, T> {
     fn constant(ar: &'id Arena<T>, t: T) -> Self {
         let mut l = Self::new(ar);
         l.l = List::new((0, t));
+        l.v = t;
         l
     }
 
@@ -93,7 +94,7 @@ impl<'id, T: One + Zero + Copy> L<'id, T> {
 
 impl<'id, T> Q<'id, T>
 where
-    T: Copy + Add<Output = T> + Mul<Output = T> + PartialEq + Default + One + Zero,
+    T: Copy + Add<Output = T> + Mul<Output = T> + One + Zero,
 {
     #[inline]
     pub fn reduce(&self) -> L<'id, T> {

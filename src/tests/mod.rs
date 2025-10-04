@@ -28,19 +28,19 @@ fn demo<R: Ring>() {
         // Q * Q -> Q
         let q = q * q;
 
-        // u128 + L -> L;
-        let l = 1u128 + l;
-
-        // u128 + L -> L;
-        let _l = 1u128 + l;
-
-        // u128 + Q -> Q;
-        let q = 1u128 + q;
-
-        // u128 + Q -> Q;
-        let _q = 1u128 + q;
-
-        let _l = &l + &l;
+        // // u128 + L -> L;
+        // let l = 1u128 + l;
+        //
+        // // u128 + L -> L;
+        // let _l = 1u128 + l;
+        //
+        // // u128 + Q -> Q;
+        // let q = 1u128 + q;
+        //
+        // // u128 + Q -> Q;
+        // let _q = 1u128 + q;
+        //
+        // let _l = &l + &l;
 
         // reduce がテープに値を出力しているはず
         // assert!(!cs.view_w().is_empty());

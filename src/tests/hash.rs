@@ -6,7 +6,7 @@
 use ark_crypto_primitives::sponge::poseidon::find_poseidon_ark_and_mds;
 use ark_ff::PrimeField;
 
-use crate::{CS, L, ops::binary::C};
+use crate::{CS, var::V};
 
 use super::utils::pow;
 
@@ -91,7 +91,7 @@ pub struct PoseidonSponge<'a, F: PrimeField> {
 
     // Sponge State
     /// Current sponge's state (current elements in the permutation block)
-    pub state: Vec<L<'a, F>>,
+    pub state: Vec<V<'a, F>>,
     /// Current mode (whether its absorbing or squeezing)
     pub mode: DuplexSpongeMode,
 
@@ -102,7 +102,7 @@ pub struct PoseidonSponge<'a, F: PrimeField> {
 }
 
 impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
-    fn apply_s_box(&self, state: &mut [L<'a, F>], is_full_round: bool) {
+    fn apply_s_box(&self, state: &mut [V<'a, F>], is_full_round: bool) {
         // Full rounds apply the S Box (x^alpha) to every element of state
         if is_full_round {
             for elem in state {
@@ -115,19 +115,19 @@ impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
         }
     }
 
-    fn apply_ark(&self, state: &mut [L<'a, F>], round_number: usize) {
+    fn apply_ark(&self, state: &mut [V<'a, F>], round_number: usize) {
         for (i, state_elem) in state.iter_mut().enumerate() {
             *state_elem += self.ark[round_number][i].clone();
         }
     }
 
-    fn apply_mds(&self, state: &mut [L<'a, F>]) {
+    fn apply_mds(&self, state: &mut [V<'a, F>]) {
         let mut new_state = Vec::new();
         for i in 0..state.len() {
             // let mut cur = self.cs.one() * 0u32;
             let mut cur = self.cs.zero();
             for (j, state_elem) in state.iter().enumerate() {
-                let term = state_elem * &C(self.mds[i][j]);
+                let term = *state_elem * self.mds[i][j];
                 cur += term;
             }
             new_state.push(cur);
@@ -161,7 +161,7 @@ impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
     }
 
     // Absorbs everything in elements, this does not end in an absorption.
-    fn absorb_internal(&mut self, mut rate_start_index: usize, elements: &[L<'a, F>]) {
+    fn absorb_internal(&mut self, mut rate_start_index: usize, elements: &[V<'a, F>]) {
         let mut remaining_elements = elements;
 
         loop {
@@ -193,7 +193,7 @@ impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
     }
 
     // Squeeze |output| many elements. This does not end in a squeeze
-    fn squeeze_internal(&mut self, mut rate_start_index: usize, output: &mut [L<'a, F>]) {
+    fn squeeze_internal(&mut self, mut rate_start_index: usize, output: &mut [V<'a, F>]) {
         let mut output_remaining = output;
         loop {
             // if we can finish in this call
@@ -243,7 +243,7 @@ impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
         }
     }
 
-    pub fn absorb(&mut self, input: &[L<'a, F>]) {
+    pub fn absorb(&mut self, input: &[V<'a, F>]) {
         let elems = input;
         if elems.is_empty() {
             return;
@@ -265,7 +265,7 @@ impl<'a, F: PrimeField> PoseidonSponge<'a, F> {
             }
         };
     }
-    pub fn squeeze_native_field_elements(&mut self, num_elements: usize) -> Vec<L<'a, F>> {
+    pub fn squeeze_native_field_elements(&mut self, num_elements: usize) -> Vec<V<'a, F>> {
         let mut squeezed_elems = vec![self.cs.zero(); num_elements];
         match self.mode {
             DuplexSpongeMode::Absorbing {

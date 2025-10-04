@@ -27,23 +27,23 @@ where
     T: Clone + Copy + Default + PartialEq + One + Zero,
 {
     #[inline]
-    pub fn alloc(&self, v: T) -> L<'id, T> {
+    pub fn alloc(&self, v: T) -> V<'id, T> {
         let idx = self.ar.alloc(v);
         let l = List::new((idx, T::one()));
-        L { v, l, ar: self.ar }
+        V::L(L { v, l, ar: self.ar })
     }
 
     #[inline]
-    pub fn constant(&self, t: T) -> L<'id, T> {
-        L::constant(self.ar, t)
+    pub fn constant(&self, t: T) -> V<'id, T> {
+        V::L(L::constant(self.ar, t))
     }
 
     #[inline]
-    pub fn one(&self) -> L<'id, T> {
+    pub fn one(&self) -> V<'id, T> {
         self.constant(T::one())
     }
     #[inline]
-    pub fn zero(&self) -> L<'id, T> {
+    pub fn zero(&self) -> V<'id, T> {
         self.constant(T::zero())
     }
 

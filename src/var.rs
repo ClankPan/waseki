@@ -6,7 +6,7 @@ use crate::{
     t_mul_l, t_mul_q,
 };
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum V<'id, T> {
     L(L<'id, T>),
     Q(Q<'id, T>),
@@ -18,6 +18,12 @@ where
 {
     pub fn new(ar: &'id Arena<T>) -> Self {
         Self::L(L::new(ar))
+    }
+    pub fn value(&self) -> T {
+        match self {
+            V::L(l) => l.value(),
+            V::Q(q) => q.value(),
+        }
     }
 }
 
@@ -60,12 +66,7 @@ where
 {
     type Output = V<'id, T>;
     fn add(self, rhs: Self) -> Self::Output {
-        match (*self, *rhs) {
-            (V::L(x), V::L(y)) => V::L(l_add_l(x, y)),
-            (V::L(l), V::Q(q)) => V::Q(q_add_l(q, l)),
-            (V::Q(q), V::L(l)) => V::Q(q_add_l(q, l)),
-            (V::Q(x), V::Q(y)) => V::Q(q_add_q(x, y)),
-        }
+        *self + *rhs
     }
 }
 
@@ -76,12 +77,7 @@ where
 {
     type Output = V<'id, T>;
     fn mul(self, rhs: Self) -> Self::Output {
-        match (*self, *rhs) {
-            (V::L(x), V::L(y)) => V::Q(l_mul_l(x, y)),
-            (V::L(l), V::Q(q)) => V::Q(q_mul_l(q, l)),
-            (V::Q(q), V::L(l)) => V::Q(q_mul_l(q, l)),
-            (V::Q(x), V::Q(y)) => V::Q(q_mul_q(x, y)),
-        }
+        *self * *rhs
     }
 }
 
