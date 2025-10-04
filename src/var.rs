@@ -1,5 +1,8 @@
 use num_traits::{One, Zero};
-use std::ops::{Add, AddAssign, Mul};
+use std::{
+    iter::{Product, Sum},
+    ops::{Add, AddAssign, Mul},
+};
 
 use crate::{
     L, Q, ar::Arena, l_add_l, l_mul_l, q_add_l, q_add_q, q_mul_l, q_mul_q, t_add_l, t_add_q,
@@ -8,6 +11,7 @@ use crate::{
 
 #[derive(Copy, Clone, Debug)]
 pub enum V<'id, T> {
+    N,
     L(L<'id, T>),
     Q(Q<'id, T>),
 }
@@ -17,12 +21,14 @@ where
     T: One + Zero + Copy,
 {
     pub fn new(ar: &'id Arena<T>) -> Self {
-        Self::L(L::new(ar))
+        // Self::L(L::new(ar))
+        Self::N
     }
     pub fn value(&self) -> T {
         match self {
             V::L(l) => l.value(),
             V::Q(q) => q.value(),
+            V::N => T::zero(),
         }
     }
 }
@@ -39,6 +45,11 @@ where
             (V::L(l), V::Q(q)) => V::Q(q_add_l(q, l)),
             (V::Q(q), V::L(l)) => V::Q(q_add_l(q, l)),
             (V::Q(x), V::Q(y)) => V::Q(q_add_q(x, y)),
+            (V::N, V::N) => V::N,
+            (V::N, V::L(l)) => V::L(l),
+            (V::N, V::Q(q)) => V::Q(q),
+            (V::L(l), V::N) => V::L(l),
+            (V::Q(q), V::N) => V::Q(q),
         }
     }
 }
@@ -55,6 +66,11 @@ where
             (V::L(l), V::Q(q)) => V::Q(q_mul_l(q, l)),
             (V::Q(q), V::L(l)) => V::Q(q_mul_l(q, l)),
             (V::Q(x), V::Q(y)) => V::Q(q_mul_q(x, y)),
+            (V::N, V::N) => V::N,
+            (V::N, V::L(l)) => V::L(l),
+            (V::N, V::Q(q)) => V::Q(q),
+            (V::L(l), V::N) => V::L(l),
+            (V::Q(q), V::N) => V::Q(q),
         }
     }
 }
@@ -91,6 +107,7 @@ where
         match self {
             V::L(l) => V::L(t_add_l(rhs, l)),
             V::Q(q) => V::Q(t_add_q(rhs, q)),
+            V::N => V::N,
         }
     }
 }
@@ -105,6 +122,7 @@ where
         match self {
             V::L(l) => V::L(t_mul_l(rhs, l)),
             V::Q(q) => V::Q(t_mul_q(rhs, q)),
+            V::N => V::N,
         }
     }
 }
@@ -148,5 +166,43 @@ where
     #[inline]
     fn add_assign(&mut self, rhs: &T) {
         *self = *self + *rhs;
+    }
+}
+
+// by-value: Iterator<Item = L>
+impl<'id, T> Sum for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero,
+{
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::N, |acc, x| acc + x)
+    }
+}
+
+// by-ref: Iterator<Item = &L>
+impl<'id, 'a, T> Sum<&'a V<'id, T>> for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero,
+{
+    fn sum<I: Iterator<Item = &'a V<'id, T>>>(iter: I) -> Self {
+        iter.fold(Self::N, |acc, x| acc + *x)
+    }
+}
+
+impl<'id, T> Product for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero,
+{
+    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::N, |acc, x| acc * x)
+    }
+}
+
+impl<'id, 'a, T> Product<&'a V<'id, T>> for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero,
+{
+    fn product<I: Iterator<Item = &'a V<'id, T>>>(iter: I) -> Self {
+        iter.fold(Self::N, |acc, x| acc * *x)
     }
 }

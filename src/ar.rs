@@ -39,22 +39,4 @@ impl<T: One + Zero> Arena<T> {
     pub fn exp(&self, a: Vec<(usize, T)>, b: Vec<(usize, T)>, c: Vec<(usize, T)>, idx: usize) {
         self.exp.borrow_mut().push((a, b, c, idx));
     }
-
-    // #[inline]
-    // pub fn reduce(&self, a: List<T>, b: List<T>, c: List<T>, v: T) -> usize {
-    //     let zero = T::default();
-    //
-    //     let mut a: Vec<_> = a.list.into();
-    //     let mut b: Vec<_> = b.list.into();
-    //     let mut c: Vec<_> = c.list.into();
-    //
-    //     // その場で 0 要素を除去（追加の Vec を作らない）
-    //     a.retain(|(_, x)| x != &zero);
-    //     b.retain(|(_, x)| x != &zero);
-    //     c.retain(|(_, x)| x != &zero);
-    //
-    //     let idx = self.alloc(v);
-    //     self.exp.borrow_mut().push((a, b, c, idx));
-    //     idx
-    // }
 }
