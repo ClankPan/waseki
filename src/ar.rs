@@ -6,19 +6,27 @@ use std::{
 };
 
 pub type M<T> = HashMap<usize, T>;
-pub type Exp<T> = (Option<(M<T>, M<T>)>, M<T>, Option<usize>);
+// pub type Exp<T> = (Option<(M<T>, M<T>)>, M<T>, Option<usize>);
 
 #[derive(Debug, Clone)]
 pub struct Arena<T> {
     pub(crate) wit: RefCell<Vec<T>>,
-    pub(crate) exp: RefCell<Vec<Exp<T>>>,
+    pub(crate) alloc: RefCell<HashMap<usize, Exp<T>>>,
+    pub(crate) equal: RefCell<Vec<Exp<T>>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Exp<T> {
+    L(M<T>),
+    Q(M<T>, M<T>, M<T>),
 }
 
 impl<T: One> Default for Arena<T> {
     fn default() -> Self {
         Self {
             wit: RefCell::new(vec![T::one()]), // 定数の1
-            exp: RefCell::new(Vec::new()),
+            alloc: RefCell::new(HashMap::new()),
+            equal: RefCell::new(Vec::new()),
         }
     }
 }
@@ -50,31 +58,54 @@ impl<T: Copy + One + Zero + PartialEq> Arena<T> {
         c: Vec<(usize, T)>,
         idx: Option<usize>,
     ) {
-        let (a, b, mut c) = (sum_by_key(a), sum_by_key(b), sum_by_key(c));
-        if let Some(l) = linearize(&a, &b) {
+        let (mut a, mut b, mut c) = (sum_by_key(a), sum_by_key(b), sum_by_key(c));
+        let exp = if let Some(l) = linearize(&a, &b) {
             merge_maps(&mut c, &l);
-            self.exp.borrow_mut().push((None, c, idx));
+            self.apply_subset(&mut c);
+            Exp::L(c)
         } else {
-            self.exp.borrow_mut().push((Some((a, b)), c, idx));
+            self.apply_subset(&mut a);
+            self.apply_subset(&mut b);
+            self.apply_subset(&mut c);
+            Exp::Q(a, b, c)
+        };
+
+        if let Some(idx) = idx {
+            self.alloc.borrow_mut().insert(idx, exp);
+        } else {
+            self.equal.borrow_mut().push(exp);
         }
     }
 
+    pub fn apply_subset(&self, m: &mut M<T>) {
+        let mut s = HashMap::new();
+        for k in m.keys() {
+            if let Some(Exp::L(l)) = self.alloc.borrow_mut().get(k) {
+                merge_maps(&mut s, l);
+                self.alloc.borrow_mut().remove(k);
+            }
+        }
+        merge_maps(m, &s);
+    }
+
     #[inline]
-    pub fn into_inner(self) -> (Vec<T>, Vec<Exp<T>>) {
+    pub fn into_inner(self) -> (Vec<T>, HashMap<usize, Exp<T>>, Vec<Exp<T>>) {
         let wit = self.wit.into_inner();
-        let exp = self.exp.into_inner();
-        (wit, exp)
+        let alloc = self.alloc.into_inner();
+        let equal = self.equal.into_inner();
+        (wit, alloc, equal)
     }
 }
 
 fn sum_by_key<T>(a: Vec<(usize, T)>) -> HashMap<usize, T>
 where
-    T: Add<Output = T> + Copy,
+    T: Add<Output = T> + Copy + Zero + PartialEq,
 {
     let mut map = HashMap::new();
     for (k, v) in a {
         map.entry(k).and_modify(|acc| *acc = *acc + v).or_insert(v);
     }
+    clean_zero(&mut map);
     map
 }
 
@@ -127,4 +158,12 @@ where
             }
         }
     }
+}
+
+/// 0項を削除
+pub fn clean_zero<T>(m: &mut M<T>)
+where
+    T: Zero + PartialEq,
+{
+    m.retain(|_, v| !v.is_zero());
 }
