@@ -1,4 +1,4 @@
-use crate::{L, ar::Arena, var::V};
+use crate::{L, ar::Arena, r1cs::optimize, var::V};
 use num_traits::{One, Zero};
 use std::{marker::PhantomData, ops::Neg};
 
@@ -6,7 +6,7 @@ use std::{marker::PhantomData, ops::Neg};
 pub fn with_cs<T, R, F>(f: F) -> R
 where
     F: for<'id> FnOnce(CS<'id, T>) -> R,
-    T: One + Zero + Copy + PartialEq,
+    T: One + Zero + Copy + PartialEq + std::fmt::Debug,
 {
     let arena = Arena::<T>::default();
     let cs = CS {
@@ -15,7 +15,7 @@ where
     };
     let r = f(cs);
 
-    // optimize(arena);
+    optimize(arena);
 
     return r;
 }
@@ -43,18 +43,41 @@ where
     #[inline]
     pub fn equal(&self, x: V<'id, T>, y: V<'id, T>) {
         let v = x - y;
-        let (a, b, c, idx) = match v {
+        match v {
             V::N => return,
-            V::L(l) => (vec![], vec![], l.l.to_vec(), None),
-            V::Q(q) => (q.a.l.to_vec(), q.b.l.to_vec(), q.c.l.to_vec(), None),
+            V::L(l) => self.ar.wire(None, l.l.to_vec(), None),
+            V::Q(q) => self
+                .ar
+                .wire(Some((q.a.l.to_vec(), q.b.l.to_vec())), q.c.l.to_vec(), None),
         };
-        self.ar.wire(a, b, c, idx);
+    }
+
+    #[inline]
+    fn inputize(&self, v: V<'id, T>) {
+        let idx = match v {
+            V::N => return,
+            V::L(l) => {
+                let idx = self.ar.alloc(l.v);
+                self.ar.wire(None, l.l.to_vec(), Some(idx));
+                idx
+            }
+            V::Q(q) => {
+                let (a, b, c) = (q.a, q.b, q.c);
+                let v = a.v * b.v + c.v;
+                let idx = self.ar.alloc(v);
+                self.ar
+                    .wire(Some((a.l.to_vec(), b.l.to_vec())), c.l.to_vec(), Some(idx));
+                idx
+            }
+        };
+        self.ar.input.borrow_mut().insert(idx);
     }
 
     #[inline]
     pub fn one(&self) -> V<'id, T> {
         self.constant(T::one())
     }
+
     #[inline]
     pub fn zero(&self) -> V<'id, T> {
         self.constant(T::zero())

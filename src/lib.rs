@@ -1,7 +1,7 @@
 mod ar;
 mod cs;
 mod ops;
-// mod r1cs;
+mod r1cs;
 #[cfg(test)]
 mod tests;
 mod var;
@@ -12,7 +12,7 @@ pub use cs::*;
 use num_traits::{One, Zero};
 use std::ops::{Add, Mul};
 
-const N: usize = 10;
+const N: usize = 3;
 
 #[derive(Copy, Clone, Debug)]
 struct List<T> {
@@ -111,7 +111,7 @@ where
         let v = a.v * b.v + c.v; // A*B+C=W
         let idx = self.ar.alloc(v);
         self.ar
-            .wire(a.l.to_vec(), b.l.to_vec(), c.l.to_vec(), Some(idx));
+            .wire(Some((a.l.to_vec(), b.l.to_vec())), c.l.to_vec(), Some(idx));
         let l = List::new((idx, T::one()));
         L { l, ar: self.ar, v }
     }
@@ -135,12 +135,7 @@ where
 
     let l = if x.l.len() + y.l.len() > N {
         let idx = ar.alloc(v);
-        ar.wire(
-            vec![],
-            vec![],
-            [x.l.to_vec(), y.l.to_vec()].concat(),
-            Some(idx),
-        );
+        ar.wire(None, [x.l.to_vec(), y.l.to_vec()].concat(), Some(idx));
         List::new((idx, T::one()))
     } else {
         x.l.merge(y.l);

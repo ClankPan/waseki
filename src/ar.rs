@@ -1,7 +1,7 @@
 use num_traits::{One, Zero};
 use std::{
     cell::RefCell,
-    collections::{HashMap, hash_map::Entry},
+    collections::{HashMap, HashSet, hash_map::Entry},
     ops::{Add, Mul},
 };
 
@@ -13,6 +13,7 @@ pub struct Arena<T> {
     pub(crate) wit: RefCell<Vec<T>>,
     pub(crate) alloc: RefCell<HashMap<usize, Exp<T>>>,
     pub(crate) equal: RefCell<Vec<Exp<T>>>,
+    pub(crate) input: RefCell<HashSet<usize>>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +28,7 @@ impl<T: One> Default for Arena<T> {
             wit: RefCell::new(vec![T::one()]), // 定数の1
             alloc: RefCell::new(HashMap::new()),
             equal: RefCell::new(Vec::new()),
+            input: RefCell::new(HashSet::new()),
         }
     }
 }
@@ -53,21 +55,27 @@ impl<T: Copy + One + Zero + PartialEq> Arena<T> {
     #[inline]
     pub fn wire(
         &self,
-        a: Vec<(usize, T)>,
-        b: Vec<(usize, T)>,
-        c: Vec<(usize, T)>,
+        q: Option<(Vec<(usize, T)>, Vec<(usize, T)>)>,
+        l: Vec<(usize, T)>,
         idx: Option<usize>,
     ) {
-        let (mut a, mut b, mut c) = (sum_by_key(a), sum_by_key(b), sum_by_key(c));
-        let exp = if let Some(l) = linearize(&a, &b) {
-            merge_maps(&mut c, &l);
-            self.apply_subset(&mut c);
-            Exp::L(c)
+        let exp = if let Some((a, b)) = q {
+            let c = l;
+            let (mut a, mut b, mut c) = (sum_by_key(a), sum_by_key(b), sum_by_key(c));
+            if let Some(l) = linearize(&a, &b) {
+                merge_maps(&mut c, &l);
+                self.apply_subset(&mut c);
+                Exp::L(c)
+            } else {
+                self.apply_subset(&mut a);
+                self.apply_subset(&mut b);
+                self.apply_subset(&mut c);
+                Exp::Q(a, b, c)
+            }
         } else {
-            self.apply_subset(&mut a);
-            self.apply_subset(&mut b);
-            self.apply_subset(&mut c);
-            Exp::Q(a, b, c)
+            let mut l = sum_by_key(l);
+            self.apply_subset(&mut l);
+            Exp::L(l)
         };
 
         if let Some(idx) = idx {
@@ -79,10 +87,11 @@ impl<T: Copy + One + Zero + PartialEq> Arena<T> {
 
     pub fn apply_subset(&self, m: &mut M<T>) {
         let mut s = HashMap::new();
+        let mut alloc = self.alloc.borrow_mut();
         for k in m.keys() {
-            if let Some(Exp::L(l)) = self.alloc.borrow_mut().get(k) {
+            if let Some(Exp::L(l)) = alloc.get(k) {
                 merge_maps(&mut s, l);
-                self.alloc.borrow_mut().remove(k);
+                alloc.remove(k);
             }
         }
         merge_maps(m, &s);
