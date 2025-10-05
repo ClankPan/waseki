@@ -1,14 +1,68 @@
-use std::collections::{HashSet, VecDeque};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    ops::Neg,
+};
 
-use crate::ar::{Arena, Exp};
+use crate::ar::{Arena, Exp, M};
 use num_traits::{One, Zero};
 
-pub fn optimize<T>(ar: Arena<T>)
+#[derive(Debug, Clone, PartialEq)]
+pub struct Constraint<T> {
+    /// The A linear combination
+    pub a: M<T>,
+    /// The B linear combination
+    pub b: M<T>,
+    /// The C linear combination
+    pub c: M<T>,
+}
+
+pub struct R1CS<T> {
+    /// The number of public inputs
+    pub ninputs: usize,
+    /// The number of private inputs (auxiliary variables)
+    pub nauxs: usize,
+    /// The constraints in the system
+    pub constraints: Vec<Constraint<T>>,
+    //
+    pub table: HashSet<usize, usize>,
+}
+
+pub fn compile<T>(ar: Arena<T>) -> R1CS<T>
+where
+    T: Copy + One + Zero + PartialEq + std::fmt::Debug + Neg<Output = T>,
+{
+    let (wit, mut alloc, mut equal, io) = ar.into_inner();
+
+    // 途中で生成された冗長な制約をなくす
+    optimize(&wit, &mut alloc, &io);
+
+    // equalに集約する
+    let minus = T::one().neg();
+    for (idx, exp) in alloc {
+        let exp = match exp {
+            Exp::L(mut l) => {
+                l.insert(idx, minus);
+                Exp::L(l)
+            }
+            Exp::Q(a, b, mut c) => {
+                c.insert(idx, minus);
+                Exp::Q(a, b, c)
+            }
+        };
+        equal.push(exp)
+    }
+
+    // idxを変換する
+
+    // witnessをそれに沿って削る
+
+    todo!()
+}
+
+pub fn optimize<T>(wit: &Vec<T>, alloc: &mut HashMap<usize, Exp<T>>, io: &HashSet<usize>)
 where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug,
 {
-    let (wit, mut alloc, _equal, io) = ar.into_inner();
-
     // 到達集合と frontier を I/O で初期化
     let mut reached: HashSet<usize> = io.clone();
     let mut q: VecDeque<usize> = io.iter().copied().collect();
@@ -42,6 +96,4 @@ where
 
     // 到達しなかった定義（どこからも使われない式）を削除
     alloc.retain(|id, _| reached.contains(id));
-
-    // 必要ならここで exp/wit を作り直す or 返す
 }

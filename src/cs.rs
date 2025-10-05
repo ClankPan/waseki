@@ -1,32 +1,45 @@
-use crate::{L, List, ar::Arena, r1cs::optimize, var::V};
+use crate::{
+    L, List,
+    ar::{Arena, M},
+    r1cs::{R1CS, compile, optimize},
+    var::V,
+};
 use num_traits::{One, Zero};
 use std::{marker::PhantomData, ops::Neg};
 
-/// ========== CS（ブランド付き：generative lifetime） ==========
-pub fn with_cs<T, R, F>(f: F) -> R
+pub struct ConstraintSystem<T> {
+    r1cs: R1CS<T>,
+}
+
+impl<T> ConstraintSystem<T>
 where
-    F: for<'id> FnOnce(CS<'id, T>) -> R,
-    T: One + Zero + Copy + PartialEq + std::fmt::Debug,
+    T: Clone + Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
 {
-    let arena = Arena::<T>::default();
-    let cs = CS {
-        ar: &arena,
-        _brand: PhantomData::<&mut ()>,
-    };
-    let r = f(cs);
+    pub fn with_cs<R, F>(f: F) -> R
+    where
+        F: for<'id> FnOnce(ConstraintSynthesizer<'id, T>) -> R,
+        T: One + Zero + Copy + PartialEq + std::fmt::Debug,
+    {
+        let arena = Arena::<T>::default();
+        let cs = ConstraintSynthesizer {
+            ar: &arena,
+            _brand: PhantomData::<&mut ()>,
+        };
+        let r = f(cs);
 
-    optimize(arena);
+        compile(arena);
 
-    return r;
+        return r;
+    }
 }
 
 #[derive(Copy, Clone)]
-pub struct CS<'id, T> {
+pub struct ConstraintSynthesizer<'id, T> {
     pub ar: &'id Arena<T>,
     _brand: PhantomData<&'id mut ()>, // 不変ブランド
 }
 
-impl<'id, T> CS<'id, T>
+impl<'id, T> ConstraintSynthesizer<'id, T>
 where
     T: Clone + Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
 {
