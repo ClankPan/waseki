@@ -13,6 +13,7 @@ use stark_rings::Ring;
 fn test_linearize() {
     with_cs::<Fr, _, _>(|cs| {
         let a: V<'_, _> = (0..N as u64).map(|n| cs.alloc(Fr::from(n))).sum();
+        a.inputize();
         let a = a + cs.alloc(Fr::from(111));
         let a = a + cs.alloc(Fr::from(222)) + cs.alloc(Fr::from(333));
         let a = a + cs.alloc(Fr::from(444));

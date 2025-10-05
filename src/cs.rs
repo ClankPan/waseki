@@ -1,4 +1,4 @@
-use crate::{L, ar::Arena, r1cs::optimize, var::V};
+use crate::{L, List, ar::Arena, r1cs::optimize, var::V};
 use num_traits::{One, Zero};
 use std::{marker::PhantomData, ops::Neg};
 
@@ -36,6 +36,15 @@ where
     }
 
     #[inline]
+    pub fn input(&self, v: T) -> V<'id, T> {
+        let idx = self.ar.alloc(v);
+        let ar = self.ar;
+        let l = List::new((idx, T::one()));
+        ar.input.borrow_mut().insert(idx);
+        V::L(L { v, l, ar })
+    }
+
+    #[inline]
     pub fn constant(&self, t: T) -> V<'id, T> {
         V::L(L::constant(self.ar, t))
     }
@@ -53,24 +62,8 @@ where
     }
 
     #[inline]
-    fn inputize(&self, v: V<'id, T>) {
-        let idx = match v {
-            V::N => return,
-            V::L(l) => {
-                let idx = self.ar.alloc(l.v);
-                self.ar.wire(None, l.l.to_vec(), Some(idx));
-                idx
-            }
-            V::Q(q) => {
-                let (a, b, c) = (q.a, q.b, q.c);
-                let v = a.v * b.v + c.v;
-                let idx = self.ar.alloc(v);
-                self.ar
-                    .wire(Some((a.l.to_vec(), b.l.to_vec())), c.l.to_vec(), Some(idx));
-                idx
-            }
-        };
-        self.ar.input.borrow_mut().insert(idx);
+    fn _inputize(&self, v: V<'id, T>) {
+        v.inputize();
     }
 
     #[inline]

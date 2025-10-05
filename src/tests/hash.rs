@@ -335,7 +335,6 @@ mod tests {
         },
     };
     use ark_ff::{PrimeField, UniformRand};
-    use rand::rng;
 
     /// This Poseidon configuration generator produces a Poseidon configuration with custom parameters
     pub fn poseidon_custom_config<F: PrimeField>(
@@ -386,7 +385,9 @@ mod tests {
             let config = circom_bn254_poseidon_canonical_config::<Fr>();
             let mut sponge = CWPoseidonSponge::<Fr>::new(cs.clone(), &config);
             for v in values.iter() {
-                sponge.absorb(&[cs.constant(*v)]);
+                let v = cs.alloc(*v);
+                v.inputize();
+                sponge.absorb(&[v]);
             }
             let cw_hash = sponge.squeeze_native_field_elements(1)[0].clone();
 
@@ -412,7 +413,9 @@ mod tests {
             let config = circom_bn254_poseidon_canonical_config::<Fr>();
             let mut sponge = CWPoseidonSponge::<Fr>::new(cs.clone(), &config);
             for v in values.iter() {
-                sponge.absorb(&[cs.constant(*v)]);
+                let v = cs.alloc(*v);
+                v.inputize();
+                sponge.absorb(&[v]);
             }
             let cw_hash = sponge.squeeze_native_field_elements(1)[0].clone();
 

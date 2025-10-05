@@ -29,6 +29,23 @@ where
             V::N => T::zero(),
         }
     }
+    pub fn inputize(&self) {
+        match self {
+            V::N => return,
+            V::L(l) => {
+                let idx = l.ar.alloc(l.v);
+                l.ar.wire(None, l.l.to_vec(), Some(idx));
+                l.ar.input(idx);
+            }
+            V::Q(q) => {
+                let (a, b, c) = (q.a, q.b, q.c);
+                let v = a.v * b.v + c.v;
+                let idx = q.ar.alloc(v);
+                q.ar.wire(Some((a.l.to_vec(), b.l.to_vec())), c.l.to_vec(), Some(idx));
+                q.ar.input(idx);
+            }
+        };
+    }
 }
 
 impl<'id, T> Neg for V<'id, T>

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::ar::{Arena, Exp};
 use num_traits::{One, Zero};
 
@@ -6,32 +8,42 @@ pub fn optimize<T>(ar: Arena<T>)
 where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug,
 {
-    let (_wit, mut alloc, _equal) = ar.into_inner();
+    let (wit, mut alloc, _equal, input) = ar.into_inner();
 
-    println!("{:?}", alloc);
+    // println!("alloc: {:?}", alloc);
+    // println!("{:?}", alloc);
 
     println!("exp len: {}", alloc.len());
 
-    // 一度も参照されない「定義専用」制約を削除
-    println!("delete used");
-    let used = {
-        let mut s = std::collections::HashSet::new();
-        for exp in alloc.values() {
-            match exp {
-                Exp::L(l) => s.extend(l.keys().copied()),
-                Exp::Q(a, b, c) => {
-                    s.extend(a.keys().copied());
-                    s.extend(b.keys().copied());
-                    s.extend(c.keys().copied());
+    let mut reached: HashSet<usize> = input.clone();
+    // 直近で新しく見つかった（= これから“だけ”処理する）集合
+    let mut frontier: Vec<usize> = input.iter().copied().collect();
+
+    while let Some(idx) = frontier.pop() {
+        match (alloc.get(&idx), wit.get(idx)) {
+            (Some(Exp::L(l)), _) => {
+                for &k in l.keys() {
+                    // まだ見ていないキーだけ追加し、次回処理対象にする
+                    if reached.insert(k) {
+                        frontier.push(k);
+                    }
                 }
             }
+            (Some(Exp::Q(a, b, c)), _) => {
+                for m in [&a, &b, &c] {
+                    for &k in m.keys() {
+                        if reached.insert(k) {
+                            frontier.push(k);
+                        }
+                    }
+                }
+            }
+            (None, Some(_)) => { /* Do nothing */ }
+            (None, None) => panic!("missing idx in alloc and wit: {}", idx),
         }
-        s
-    };
-    alloc.retain(|idx, exp| match exp {
-        Exp::L(_) => used.contains(&idx),
-        _ => true,
-    });
+    }
+    // 使っていないやつを消す
+    alloc.retain(|idx, _| reached.contains(&idx));
 
     println!("optimized exp len: {}", alloc.len());
 }

@@ -53,6 +53,11 @@ impl<T: Copy + One + Zero + PartialEq> Arena<T> {
     }
 
     #[inline]
+    pub fn input(&self, idx: usize) {
+        self.input.borrow_mut().insert(idx);
+    }
+
+    #[inline]
     pub fn wire(
         &self,
         q: Option<(Vec<(usize, T)>, Vec<(usize, T)>)>,
@@ -87,22 +92,22 @@ impl<T: Copy + One + Zero + PartialEq> Arena<T> {
 
     pub fn apply_subset(&self, m: &mut M<T>) {
         let mut s = HashMap::new();
-        let mut alloc = self.alloc.borrow_mut();
-        for k in m.keys() {
-            if let Some(Exp::L(l)) = alloc.get(k) {
+        for k in m.keys().copied().collect::<Vec<_>>() {
+            if let Some(Exp::L(l)) = self.alloc.borrow().get(&k) {
                 merge_maps(&mut s, l);
-                alloc.remove(k);
+                m.remove(&k);
             }
         }
         merge_maps(m, &s);
     }
 
     #[inline]
-    pub fn into_inner(self) -> (Vec<T>, HashMap<usize, Exp<T>>, Vec<Exp<T>>) {
+    pub fn into_inner(self) -> (Vec<T>, HashMap<usize, Exp<T>>, Vec<Exp<T>>, HashSet<usize>) {
         let wit = self.wit.into_inner();
         let alloc = self.alloc.into_inner();
         let equal = self.equal.into_inner();
-        (wit, alloc, equal)
+        let input = self.input.into_inner();
+        (wit, alloc, equal, input)
     }
 }
 
