@@ -1,19 +1,19 @@
 use num_traits::{One, Zero};
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet, hash_map::Entry},
+    collections::{BTreeMap, BTreeSet, btree_map::Entry},
     ops::{Add, Mul},
 };
 
-pub type M<T> = HashMap<usize, T>;
+pub type M<T> = BTreeMap<usize, T>;
 // pub type Exp<T> = (Option<(M<T>, M<T>)>, M<T>, Option<usize>);
 
 #[derive(Debug, Clone)]
 pub struct Arena<T> {
     pub(crate) auxes: RefCell<Vec<T>>,
-    pub(crate) wires: RefCell<HashMap<usize, Exp<T>>>,
+    pub(crate) wires: RefCell<BTreeMap<usize, Exp<T>>>,
     pub(crate) exprs: RefCell<Vec<Exp<T>>>,
-    pub(crate) input: RefCell<HashSet<usize>>,
+    pub(crate) input: RefCell<BTreeSet<usize>>,
     pub(crate) build: bool,
 }
 
@@ -27,9 +27,9 @@ impl<T: One> Default for Arena<T> {
     fn default() -> Self {
         Self {
             auxes: RefCell::new(vec![T::one()]), // 定数の1
-            wires: RefCell::new(HashMap::new()),
+            wires: RefCell::new(BTreeMap::new()),
             exprs: RefCell::new(Vec::new()),
-            input: RefCell::new(HashSet::from([0])), // 定数の1は常にinput
+            input: RefCell::new(BTreeSet::from([0])), // 定数の1は常にinput
             build: true,
         }
     }
@@ -96,7 +96,7 @@ impl<T: Copy + One + Zero + PartialEq> Arena<T> {
     }
 
     pub fn apply_subset(&self, m: &mut M<T>) {
-        let mut s = HashMap::new();
+        let mut s = BTreeMap::new();
         for k in m.keys().copied().collect::<Vec<_>>() {
             if let Some(Exp::L(l)) = self.wires.borrow().get(&k) {
                 merge_maps(&mut s, l);
@@ -107,7 +107,14 @@ impl<T: Copy + One + Zero + PartialEq> Arena<T> {
     }
 
     #[inline]
-    pub fn into_inner(self) -> (Vec<T>, HashMap<usize, Exp<T>>, Vec<Exp<T>>, HashSet<usize>) {
+    pub fn into_inner(
+        self,
+    ) -> (
+        Vec<T>,
+        BTreeMap<usize, Exp<T>>,
+        Vec<Exp<T>>,
+        BTreeSet<usize>,
+    ) {
         let wit = self.auxes.into_inner();
         let alloc = self.wires.into_inner();
         let equal = self.exprs.into_inner();
@@ -116,11 +123,11 @@ impl<T: Copy + One + Zero + PartialEq> Arena<T> {
     }
 }
 
-fn sum_by_key<T>(a: Vec<(usize, T)>) -> HashMap<usize, T>
+fn sum_by_key<T>(a: Vec<(usize, T)>) -> BTreeMap<usize, T>
 where
     T: Add<Output = T> + Copy + Zero + PartialEq,
 {
-    let mut map = HashMap::new();
+    let mut map = BTreeMap::new();
     for (k, v) in a {
         map.entry(k).and_modify(|acc| *acc = *acc + v).or_insert(v);
     }
@@ -147,7 +154,7 @@ fn scale_map<T>(m: &M<T>, c: T) -> M<T>
 where
     T: Copy + Mul<Output = T>,
 {
-    let mut out = M::with_capacity(m.len());
+    let mut out = M::new();
     for (&k, &v) in m {
         out.insert(k, v * c);
     }

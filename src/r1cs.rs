@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap, HashSet, VecDeque, hash_map::Entry},
+    collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry},
     iter::Sum,
     ops::Neg,
 };
@@ -26,7 +26,7 @@ pub struct R1CS<T> {
     /// The constraints in the system
     pub constraints: Vec<Constraint<T>>,
     //
-    pub table: HashMap<usize, usize>,
+    pub table: BTreeMap<usize, usize>,
 }
 
 impl<T> R1CS<T>
@@ -48,9 +48,9 @@ where
 
 pub fn compile<T>(
     auxes: &Vec<T>,
-    mut wires: HashMap<usize, Exp<T>>,
+    mut wires: BTreeMap<usize, Exp<T>>,
     exprs: Vec<Exp<T>>,
-    io: HashSet<usize>,
+    io: BTreeSet<usize>,
 ) -> R1CS<T>
 where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug + Neg<Output = T>,
@@ -72,7 +72,7 @@ where
 }
 
 // Input変数から到達できない孤立した制約を削除する
-pub fn optimize<T>(auxes: &Vec<T>, wires: &mut HashMap<usize, Exp<T>>, io: &HashSet<usize>)
+pub fn optimize<T>(auxes: &Vec<T>, wires: &mut BTreeMap<usize, Exp<T>>, io: &BTreeSet<usize>)
 where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug,
 {
@@ -112,7 +112,7 @@ where
     // 必要ならここで exp/wit を作り直す or 返す
 }
 
-pub fn build_witness<T>(auxes: Vec<T>, table: &HashMap<usize, usize>) -> Vec<T>
+pub fn build_witness<T>(auxes: Vec<T>, table: &BTreeMap<usize, usize>) -> Vec<T>
 where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug + Neg<Output = T>,
 {
@@ -123,10 +123,10 @@ where
     witness
 }
 pub fn build_constraints<T>(
-    wires: HashMap<usize, Exp<T>>,
+    wires: BTreeMap<usize, Exp<T>>,
     mut exprs: Vec<Exp<T>>,
-    io: HashSet<usize>,
-) -> (Vec<Constraint<T>>, HashMap<usize, usize>)
+    io: BTreeSet<usize>,
+) -> (Vec<Constraint<T>>, BTreeMap<usize, usize>)
 where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug + Neg<Output = T>,
 {
@@ -147,7 +147,7 @@ where
     }
 
     // 1) idx を変換するテーブルを作成（I/O は先頭に固定割当）
-    let mut table: HashMap<usize, usize> =
+    let mut table: BTreeMap<usize, usize> =
         io.into_iter().enumerate().map(|(i, id)| (id, i)).collect();
 
     // 2) equal に現れる id をすべてインターン
@@ -172,7 +172,7 @@ where
 }
 
 // equal 内の各マップに現れる id を table に登録（未登録なら連番を割当）
-fn intern_keys<T>(table: &mut HashMap<usize, usize>, m: &M<T>) {
+fn intern_keys<T>(table: &mut BTreeMap<usize, usize>, m: &M<T>) {
     for &id in m.keys() {
         let idx = table.len();
         if let Entry::Vacant(v) = table.entry(id) {
@@ -182,8 +182,8 @@ fn intern_keys<T>(table: &mut HashMap<usize, usize>, m: &M<T>) {
 }
 
 // m のキーを table に従って写像（消費版）
-fn remap_map<T>(m: M<T>, table: &HashMap<usize, usize>) -> M<T> {
-    let mut out = M::with_capacity(m.len());
+fn remap_map<T>(m: M<T>, table: &BTreeMap<usize, usize>) -> M<T> {
+    let mut out = M::new();
     for (id, v) in m {
         let k = *table.get(&id).expect("id must be interned");
         out.insert(k, v);
@@ -192,11 +192,11 @@ fn remap_map<T>(m: M<T>, table: &HashMap<usize, usize>) -> M<T> {
 }
 
 // 1つの Exp から Constraint へ（キー写像込み）
-fn exp_to_constraint<T>(exp: Exp<T>, table: &HashMap<usize, usize>) -> Constraint<T> {
+fn exp_to_constraint<T>(exp: Exp<T>, table: &BTreeMap<usize, usize>) -> Constraint<T> {
     match exp {
         Exp::L(l) => Constraint {
-            a: HashMap::new(),
-            b: HashMap::new(),
+            a: BTreeMap::new(),
+            b: BTreeMap::new(),
             c: remap_map(l, table),
         },
         Exp::Q(a, b, c) => Constraint {
