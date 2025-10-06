@@ -1,36 +1,53 @@
 use crate::{
     L, List,
-    ar::{Arena, M},
-    r1cs::{R1CS, compile, optimize},
+    ar::Arena,
+    r1cs::{R1CS, compile},
     var::V,
 };
 use num_traits::{One, Zero};
-use std::{marker::PhantomData, ops::Neg};
+use std::{iter::Sum, marker::PhantomData, ops::Neg};
 
 #[derive(Default)]
 pub struct ConstraintSystem<T> {
-    r1cs: Option<R1CS<T>>,
+    pub r1cs: Option<R1CS<T>>,
+    pub witness: Vec<T>,
 }
 
 impl<T> ConstraintSystem<T>
 where
-    T: Clone + Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
+    T: Clone + Copy + Default + PartialEq + One + Zero + Neg<Output = T> + Sum + std::fmt::Debug,
 {
     pub fn with_cs<R, F>(&mut self, f: F) -> R
     where
         F: for<'id> FnOnce(ConstraintSynthesizer<'id, T>) -> R,
         T: One + Zero + Copy + PartialEq + std::fmt::Debug,
     {
-        let arena = Arena::<T>::default();
+        let ar = Arena::<T>::default();
         let cs = ConstraintSynthesizer {
-            ar: &arena,
+            ar: &ar,
             _brand: PhantomData::<&mut ()>,
         };
         let r = f(cs);
 
-        compile(arena);
+        let (auxes, wires, exprs, io) = ar.into_inner();
+
+        self.witness = if let Some(r1cs) = &self.r1cs {
+            r1cs.witness(auxes)
+        } else {
+            let r1cs = compile(&auxes, wires, exprs, io);
+            let witness = r1cs.witness(auxes);
+            self.r1cs = Some(r1cs);
+            witness
+        };
 
         return r;
+    }
+    pub fn is_satisfied(&self) -> bool {
+        if let Some(r1cs) = &self.r1cs {
+            r1cs.satisfies(&self.witness)
+        } else {
+            false
+        }
     }
 }
 
@@ -65,18 +82,11 @@ where
 
     #[inline]
     pub fn equal(&self, x: V<'id, T>, y: V<'id, T>) {
-        let v = x - y;
-        match v {
-            V::N => return,
-            V::L(l) => self.ar.wire(None, l.l.to_vec(), None),
-            V::Q(q) => self
-                .ar
-                .wire(Some((q.a.l.to_vec(), q.b.l.to_vec())), q.c.l.to_vec(), None),
-        };
+        x.equals(y);
     }
 
     #[inline]
-    fn _inputize(&self, v: V<'id, T>) {
+    pub fn inputize(&self, v: V<'id, T>) {
         v.inputize();
     }
 

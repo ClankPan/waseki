@@ -1,6 +1,8 @@
+use std::ops::Neg;
+
 use ark_ff::Field;
 
-use crate::{ConstraintSynthesizer, ConstraintSystem, var::V};
+use crate::{ConstraintSynthesizer, ConstraintSystem, r1cs::R1CS, var::V};
 type CS<'a, F> = ConstraintSynthesizer<'a, F>;
 
 pub fn pow<'a, F: Field>(cs: CS<'a, F>, mut base: V<'a, F>, mut exp: u64) -> V<'a, F> {
@@ -26,4 +28,25 @@ pub fn test_pow() {
 
         assert_eq!(b.value(), Fr::from(8));
     });
+}
+
+#[test]
+pub fn trest_waseki_pow() {
+    use ark_bn254::Fr;
+
+    let cs = waseki_pow::<Fr>(2, 3);
+    assert!(cs.is_satisfied())
+}
+
+pub fn waseki_pow<F: Field>(base: u128, exp: u64) -> ConstraintSystem<F>
+where
+{
+    let mut cs = ConstraintSystem::default();
+    cs.with_cs(|cs| {
+        let a = cs.input(F::from(base));
+        let b = pow(cs, a, exp);
+        // cs.equal(b, cs.constant(b.value()));
+        b.inputize();
+    });
+    cs
 }

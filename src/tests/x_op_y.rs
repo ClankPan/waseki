@@ -15,7 +15,9 @@ fn test_l_add_l() {
         assert_eq!(l_b.l.to_vec(), vec![(0, v_b)]);
         assert_eq!(l_c.l.to_vec(), vec![(0, v_a), (0, v_b)]);
 
-        let l_a: L<'_, _> = (0..N).map(|_| l_a).fold(L::new(cs.ar), |acc, x| acc + x);
+        let l_a: L<'_, _> = (0..N)
+            .map(|_| l_a)
+            .fold(L::new(cs.ar), |acc, x| l_add_l(acc, x));
         let l_c = l_add_l(l_a, l_a);
         assert_eq!(l_c.l.to_vec(), vec![(1, Fr::from(1))]);
 

@@ -1,9 +1,10 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque, hash_map::Entry},
+    iter::Sum,
     ops::Neg,
 };
 
-use crate::ar::{Arena, Exp, M};
+use crate::ar::{Exp, M};
 use num_traits::{One, Zero};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -16,6 +17,7 @@ pub struct Constraint<T> {
     pub c: M<T>,
 }
 
+#[derive(Debug)]
 pub struct R1CS<T> {
     /// The number of public inputs
     pub ninputs: usize,
@@ -29,18 +31,31 @@ pub struct R1CS<T> {
 
 impl<T> R1CS<T>
 where
-    T: Copy + One + Zero + PartialEq + std::fmt::Debug + Neg<Output = T>,
+    T: Copy + One + Zero + PartialEq + std::fmt::Debug + Neg<Output = T> + Sum,
 {
     pub fn witness(&self, auxes: Vec<T>) -> Vec<T> {
         build_witness(auxes, &self.table)
     }
+    pub fn satisfies(&self, witness: &Vec<T>) -> bool {
+        self.constraints.iter().all(|Constraint { a, b, c }| {
+            let a: T = a.iter().map(|(i, t)| witness[*i] * *t).sum();
+            let b: T = b.iter().map(|(i, t)| witness[*i] * *t).sum();
+            let c: T = c.iter().map(|(i, t)| witness[*i] * *t).sum();
+            T::zero() == (a * b + c)
+        })
+    }
 }
 
-pub fn compile<T>(ar: Arena<T>) -> R1CS<T>
+pub fn compile<T>(
+    auxes: &Vec<T>,
+    mut wires: HashMap<usize, Exp<T>>,
+    exprs: Vec<Exp<T>>,
+    io: HashSet<usize>,
+) -> R1CS<T>
 where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug + Neg<Output = T>,
 {
-    let (auxes, mut wires, exprs, io) = ar.into_inner();
+    println!("{:?}, {:?}", wires, exprs);
 
     let ninputs = io.len();
     // 途中で生成された冗長な制約をなくす
@@ -56,7 +71,7 @@ where
     }
 }
 
-pub fn optimize<T>(wit: &Vec<T>, alloc: &mut HashMap<usize, Exp<T>>, io: &HashSet<usize>)
+pub fn optimize<T>(auxes: &Vec<T>, wires: &mut HashMap<usize, Exp<T>>, io: &HashSet<usize>)
 where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug,
 {
@@ -64,8 +79,10 @@ where
     let mut reached: HashSet<usize> = io.clone();
     let mut q: VecDeque<usize> = io.iter().copied().collect();
 
+    dbg!(&reached);
+
     while let Some(idx) = q.pop_front() {
-        match (alloc.get(&idx), wit.get(idx)) {
+        match (wires.get(&idx), auxes.get(idx)) {
             // 線形定義: 参照キーを辿る
             (Some(Exp::L(l)), _) => {
                 for &k in l.keys() {
@@ -92,7 +109,11 @@ where
     }
 
     // 到達しなかった定義（どこからも使われない式）を削除
-    alloc.retain(|id, _| reached.contains(id));
+    dbg!(&reached);
+
+    wires.retain(|id, _| reached.contains(id));
+
+    // 必要ならここで exp/wit を作り直す or 返す
 }
 
 pub fn build_witness<T>(auxes: Vec<T>, table: &HashMap<usize, usize>) -> Vec<T>
@@ -113,6 +134,8 @@ pub fn build_constraints<T>(
 where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug + Neg<Output = T>,
 {
+    println!("wires: {:?}", wires);
+
     // equalに集約する
     let minus = T::one().neg();
     for (idx, exp) in wires {
@@ -128,6 +151,8 @@ where
         };
         exprs.push(exp)
     }
+
+    println!("exprs: {:?}", exprs);
 
     // 1) idx を変換するテーブルを作成（I/O は先頭に固定割当）
     let mut table: HashMap<usize, usize> =

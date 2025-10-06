@@ -17,11 +17,12 @@ pub enum V<'id, T> {
 
 impl<'id, T> V<'id, T>
 where
-    T: One + Zero + Copy + PartialEq,
+    T: One + Zero + Copy + PartialEq + Neg<Output = T> + Default,
 {
     pub fn new() -> Self {
         Self::N
     }
+
     pub fn value(&self) -> T {
         match self {
             V::L(l) => l.value(),
@@ -29,6 +30,7 @@ where
             V::N => T::zero(),
         }
     }
+
     pub fn inputize(&self) {
         match self {
             V::N => return,
@@ -43,6 +45,20 @@ where
                 let idx = q.ar.alloc(v);
                 q.ar.wire(Some((a.l.to_vec(), b.l.to_vec())), c.l.to_vec(), Some(idx));
                 q.ar.input(idx);
+            }
+        };
+    }
+
+    pub fn equals(&self, rhs: Self) {
+        (self - &rhs).equals_zero();
+    }
+
+    pub fn equals_zero(&self) {
+        match self {
+            V::N => return,
+            V::L(l) => l.ar.wire(None, l.l.to_vec(), None),
+            V::Q(q) => {
+                q.ar.wire(Some((q.a.l.to_vec(), q.b.l.to_vec())), q.c.l.to_vec(), None)
             }
         };
     }
@@ -73,14 +89,11 @@ where
     fn add(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (V::L(x), V::L(y)) => V::L(l_add_l(x, y)),
-            (V::L(l), V::Q(q)) => V::Q(q_add_l(q, l)),
-            (V::Q(q), V::L(l)) => V::Q(q_add_l(q, l)),
             (V::Q(x), V::Q(y)) => V::Q(q_add_q(x, y)),
+            (V::L(l), V::Q(q)) | (V::Q(q), V::L(l)) => V::Q(q_add_l(q, l)),
+            (V::N, V::L(l)) | (V::L(l), V::N) => V::L(l),
+            (V::N, V::Q(q)) | (V::Q(q), V::N) => V::Q(q),
             (V::N, V::N) => V::N,
-            (V::N, V::L(l)) => V::L(l),
-            (V::N, V::Q(q)) => V::Q(q),
-            (V::L(l), V::N) => V::L(l),
-            (V::Q(q), V::N) => V::Q(q),
         }
     }
 }
@@ -105,14 +118,11 @@ where
     fn mul(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (V::L(x), V::L(y)) => V::Q(l_mul_l(x, y)),
-            (V::L(l), V::Q(q)) => V::Q(q_mul_l(q, l)),
-            (V::Q(q), V::L(l)) => V::Q(q_mul_l(q, l)),
             (V::Q(x), V::Q(y)) => V::Q(q_mul_q(x, y)),
+            (V::L(l), V::Q(q)) | (V::Q(q), V::L(l)) => V::Q(q_mul_l(q, l)),
+            (V::N, V::L(l)) | (V::L(l), V::N) => V::L(l),
+            (V::N, V::Q(q)) | (V::Q(q), V::N) => V::Q(q),
             (V::N, V::N) => V::N,
-            (V::N, V::L(l)) => V::L(l),
-            (V::N, V::Q(q)) => V::Q(q),
-            (V::L(l), V::N) => V::L(l),
-            (V::Q(q), V::N) => V::Q(q),
         }
     }
 }
