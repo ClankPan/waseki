@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque, hash_map::Entry},
+    collections::{BTreeSet, HashMap, HashSet, VecDeque, hash_map::Entry},
     iter::Sum,
     ops::Neg,
 };
@@ -55,13 +55,13 @@ pub fn compile<T>(
 where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug + Neg<Output = T>,
 {
-    println!("{:?}, {:?}", wires, exprs);
-
     let ninputs = io.len();
     // 途中で生成された冗長な制約をなくす
     optimize(&auxes, &mut wires, &io);
 
     let (constraints, table) = build_constraints(wires, exprs, io);
+
+    println!("constraints: {:?}\ntable: {:?}\n", constraints, table);
 
     R1CS {
         ninputs,
@@ -71,15 +71,14 @@ where
     }
 }
 
+// Input変数から到達できない孤立した制約を削除する
 pub fn optimize<T>(auxes: &Vec<T>, wires: &mut HashMap<usize, Exp<T>>, io: &HashSet<usize>)
 where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug,
 {
     // 到達集合と frontier を I/O で初期化
-    let mut reached: HashSet<usize> = io.clone();
+    let mut reached: BTreeSet<usize> = io.clone();
     let mut q: VecDeque<usize> = io.iter().copied().collect();
-
-    dbg!(&reached);
 
     while let Some(idx) = q.pop_front() {
         match (wires.get(&idx), auxes.get(idx)) {
@@ -108,9 +107,6 @@ where
         }
     }
 
-    // 到達しなかった定義（どこからも使われない式）を削除
-    dbg!(&reached);
-
     wires.retain(|id, _| reached.contains(id));
 
     // 必要ならここで exp/wit を作り直す or 返す
@@ -134,8 +130,6 @@ pub fn build_constraints<T>(
 where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug + Neg<Output = T>,
 {
-    println!("wires: {:?}", wires);
-
     // equalに集約する
     let minus = T::one().neg();
     for (idx, exp) in wires {
@@ -151,8 +145,6 @@ where
         };
         exprs.push(exp)
     }
-
-    println!("exprs: {:?}", exprs);
 
     // 1) idx を変換するテーブルを作成（I/O は先頭に固定割当）
     let mut table: HashMap<usize, usize> =

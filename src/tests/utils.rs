@@ -1,8 +1,6 @@
-use std::ops::Neg;
-
 use ark_ff::Field;
 
-use crate::{ConstraintSynthesizer, ConstraintSystem, r1cs::R1CS, var::V};
+use crate::{ConstraintSynthesizer, ConstraintSystem, var::V};
 type CS<'a, F> = ConstraintSynthesizer<'a, F>;
 
 pub fn pow<'a, F: Field>(cs: CS<'a, F>, mut base: V<'a, F>, mut exp: u64) -> V<'a, F> {

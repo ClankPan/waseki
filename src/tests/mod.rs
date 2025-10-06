@@ -1,3 +1,4 @@
+mod blackbox;
 mod hash;
 mod utils;
 mod x_op_y;
@@ -73,7 +74,6 @@ fn demo_with_goldilocks_ring_ntt() {
 use ark_ff::{Field, PrimeField};
 use ark_r1cs_std::{
     alloc::AllocVar,
-    eq::EqGadget,
     fields::{FieldVar, fp::FpVar},
 };
 use ark_relations::r1cs::{
@@ -86,8 +86,10 @@ use utils::waseki_pow;
 fn test_compati_with_arkworks() {
     let matrices = arkworks_pow(2, 3);
 
-    println!("arkworks: {:?}", matrices);
-    let r1cs = waseki_pow::<Fr>(2, 3);
+    println!("arkworks: {:?}\n", matrices);
+
+    let cs = waseki_pow::<Fr>(2, 3);
+    println!("waseki: {:?}", cs.r1cs);
 
     assert!(false)
 }
@@ -117,8 +119,6 @@ fn arkworks_pow(base: u128, exp: u64) -> ConstraintMatrices<Fr> {
     matrices
 }
 
-// use ark_r1cs_std::{alloc::AllocVar, fields::fp::FpVar};
-
 // 例: 回路本体
 struct Circuit<Fr: Field> {
     // 好みで公開/秘密どちらでも
@@ -135,11 +135,11 @@ impl<Fr: PrimeField> ConstraintSynthesizer<Fr> for Circuit<Fr> {
         // べき乗
         let acc = pow::<Fr>(base, self.exp)?; // FpVar<Fr>
 
-        // 必要なら結果に制約を課す（例: 期待値と等しい）
-        if let Some(exp_val) = self.expect {
-            let expect_var = FpVar::<Fr>::new_witness(cs, || Ok(exp_val))?;
-            acc.enforce_equal(&expect_var)?;
-        }
+        // // 必要なら結果に制約を課す（例: 期待値と等しい）
+        // if let Some(exp_val) = self.expect {
+        //     let expect_var = FpVar::<Fr>::new_witness(cs, || Ok(exp_val))?;
+        //     acc.enforce_equal(&expect_var)?;
+        // }
 
         Ok(())
     }
