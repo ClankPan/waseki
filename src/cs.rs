@@ -7,15 +7,16 @@ use crate::{
 use num_traits::{One, Zero};
 use std::{marker::PhantomData, ops::Neg};
 
+#[derive(Default)]
 pub struct ConstraintSystem<T> {
-    r1cs: R1CS<T>,
+    r1cs: Option<R1CS<T>>,
 }
 
 impl<T> ConstraintSystem<T>
 where
     T: Clone + Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
 {
-    pub fn with_cs<R, F>(f: F) -> R
+    pub fn with_cs<R, F>(&mut self, f: F) -> R
     where
         F: for<'id> FnOnce(ConstraintSynthesizer<'id, T>) -> R,
         T: One + Zero + Copy + PartialEq + std::fmt::Debug,

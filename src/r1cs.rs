@@ -53,6 +53,19 @@ where
     }
 
     // idxを変換する
+    let mut table: HashMap<usize, usize> = io.into_iter().map(|i| (i, i)).collect();
+    for exp in equal.iter() {
+        match exp {
+            Exp::L(l) => {
+                for id in l.keys() {
+                    let len = table.len();
+                    table.entry(*id).or_insert(len);
+                    // ここで同時にconstraintを作る
+                }
+            }
+            Exp::Q(a, b, c) => todo!(),
+        }
+    }
 
     // witnessをそれに沿って削る
 

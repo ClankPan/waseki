@@ -6,7 +6,8 @@
 use ark_crypto_primitives::sponge::poseidon::find_poseidon_ark_and_mds;
 use ark_ff::PrimeField;
 
-use crate::{CS, var::V};
+use crate::{ConstraintSynthesizer, var::V};
+type CS<'a, F> = ConstraintSynthesizer<'a, F>;
 
 use super::utils::pow;
 
@@ -323,7 +324,8 @@ pub fn circom_bn254_poseidon_canonical_config<F: PrimeField>() -> PoseidonConfig
 
 #[cfg(test)]
 mod tests {
-    use crate::with_cs;
+
+    use crate::ConstraintSystem;
 
     use super::{PoseidonSponge as CWPoseidonSponge, circom_bn254_poseidon_canonical_config};
     use ark_bn254::Fr;
@@ -381,7 +383,8 @@ mod tests {
         let ark_hash = sponge.squeeze_native_field_elements(1)[0];
 
         // cswireのposeidon
-        with_cs(|cs| {
+        let mut cs = ConstraintSystem::default();
+        cs.with_cs(|cs| {
             let config = circom_bn254_poseidon_canonical_config::<Fr>();
             let mut sponge = CWPoseidonSponge::<Fr>::new(cs.clone(), &config);
             for v in values.iter() {
@@ -409,7 +412,8 @@ mod tests {
         let ark_hash = sponge.squeeze_native_field_elements(1)[0];
 
         // cswireのposeidon
-        with_cs(|cs| {
+        let mut cs = ConstraintSystem::default();
+        cs.with_cs(|cs| {
             let config = circom_bn254_poseidon_canonical_config::<Fr>();
             let mut sponge = CWPoseidonSponge::<Fr>::new(cs.clone(), &config);
             for v in values.iter() {

@@ -11,7 +11,8 @@ use stark_rings::Ring;
 
 #[test]
 fn test_linearize() {
-    with_cs::<Fr, _, _>(|cs| {
+    let mut cs = ConstraintSystem::default();
+    cs.with_cs::<_, _>(|cs| {
         let a: V<'_, _> = (0..N as u64).map(|n| cs.alloc(Fr::from(n))).sum();
         a.inputize();
         let a = a + cs.alloc(Fr::from(111));
@@ -22,7 +23,8 @@ fn test_linearize() {
 }
 
 fn demo<R: Ring>() {
-    with_cs::<R, _, _>(|cs| {
+    let mut cs = ConstraintSystem::default();
+    cs.with_cs::<_, _>(|cs| {
         let l1 = cs.alloc(R::from(1u128));
         let l2 = cs.alloc(R::from(2u128));
 

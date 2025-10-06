@@ -14,6 +14,7 @@ pub struct Arena<T> {
     pub(crate) alloc: RefCell<HashMap<usize, Exp<T>>>,
     pub(crate) equal: RefCell<Vec<Exp<T>>>,
     pub(crate) input: RefCell<HashSet<usize>>,
+    pub(crate) build: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +30,7 @@ impl<T: One> Default for Arena<T> {
             alloc: RefCell::new(HashMap::new()),
             equal: RefCell::new(Vec::new()),
             input: RefCell::new(HashSet::new()),
+            build: true,
         }
     }
 }
@@ -64,29 +66,32 @@ impl<T: Copy + One + Zero + PartialEq> Arena<T> {
         l: Vec<(usize, T)>,
         idx: Option<usize>,
     ) {
-        let exp = if let Some((a, b)) = q {
-            let c = l;
-            let (mut a, mut b, mut c) = (sum_by_key(a), sum_by_key(b), sum_by_key(c));
-            if let Some(l) = linearize(&a, &b) {
-                merge_maps(&mut c, &l);
-                self.apply_subset(&mut c);
-                Exp::L(c)
+        // build時以外は無用なコピーや保存を避ける
+        if self.build {
+            let exp = if let Some((a, b)) = q {
+                let c = l;
+                let (mut a, mut b, mut c) = (sum_by_key(a), sum_by_key(b), sum_by_key(c));
+                if let Some(l) = linearize(&a, &b) {
+                    merge_maps(&mut c, &l);
+                    self.apply_subset(&mut c);
+                    Exp::L(c)
+                } else {
+                    self.apply_subset(&mut a);
+                    self.apply_subset(&mut b);
+                    self.apply_subset(&mut c);
+                    Exp::Q(a, b, c)
+                }
             } else {
-                self.apply_subset(&mut a);
-                self.apply_subset(&mut b);
-                self.apply_subset(&mut c);
-                Exp::Q(a, b, c)
-            }
-        } else {
-            let mut l = sum_by_key(l);
-            self.apply_subset(&mut l);
-            Exp::L(l)
-        };
+                let mut l = sum_by_key(l);
+                self.apply_subset(&mut l);
+                Exp::L(l)
+            };
 
-        if let Some(idx) = idx {
-            self.alloc.borrow_mut().insert(idx, exp);
-        } else {
-            self.equal.borrow_mut().push(exp);
+            if let Some(idx) = idx {
+                self.alloc.borrow_mut().insert(idx, exp);
+            } else {
+                self.equal.borrow_mut().push(exp);
+            }
         }
     }
 

@@ -43,15 +43,22 @@ impl<T: Copy + One + Zero> List<T> {
     fn to_vec(&self) -> Vec<(usize, T)> {
         self.list[..self.len].to_vec()
     }
-    fn mul(&mut self, t: T) {
-        self.list.iter_mut().for_each(|i| i.1 = t * i.1);
+    fn mul(&mut self, t: T, build: bool) {
+        if build {
+            self.list.iter_mut().for_each(|i| i.1 = t * i.1);
+        }
     }
     fn len(&self) -> usize {
         self.len
     }
-    fn merge(&mut self, rhs: Self) {
-        for v in rhs.to_vec() {
-            self.push(v)
+    fn merge(&mut self, rhs: Self, build: bool) {
+        if build {
+            for v in rhs.to_vec() {
+                self.push(v)
+            }
+        } else {
+            // buildが無効の時は無用なコピーを避けるために長さだけ保持する
+            self.len += rhs.len;
         }
     }
 }
@@ -139,7 +146,7 @@ where
         ar.wire(None, [x.l.to_vec(), y.l.to_vec()].concat(), Some(idx));
         List::new((idx, T::one()))
     } else {
-        x.l.merge(y.l);
+        x.l.merge(y.l, ar.build);
         x.l
     };
 
@@ -209,7 +216,7 @@ where
     let v = t * l.v;
     let ar = l.ar;
     let mut l = l.l;
-    l.mul(t);
+    l.mul(t, ar.build);
     L { l, v, ar }
 }
 
