@@ -1,6 +1,5 @@
 mod ar;
 mod cs;
-mod ops;
 mod r1cs;
 #[cfg(test)]
 mod tests;
