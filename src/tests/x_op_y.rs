@@ -20,7 +20,7 @@ fn test_l_add_l() {
         assert_eq!(l_c.l.to_vec(), vec![(1, Fr::from(1))]);
 
         assert_eq!(
-            cs.ar.wit.borrow()[1],
+            cs.ar.auxes.borrow()[1],
             (0..N).map(|_| v_a).sum::<Fr>() * Fr::from(2)
         );
 

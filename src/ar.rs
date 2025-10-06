@@ -10,9 +10,9 @@ pub type M<T> = HashMap<usize, T>;
 
 #[derive(Debug, Clone)]
 pub struct Arena<T> {
-    pub(crate) wit: RefCell<Vec<T>>,
-    pub(crate) alloc: RefCell<HashMap<usize, Exp<T>>>,
-    pub(crate) equal: RefCell<Vec<Exp<T>>>,
+    pub(crate) auxes: RefCell<Vec<T>>,
+    pub(crate) wires: RefCell<HashMap<usize, Exp<T>>>,
+    pub(crate) exprs: RefCell<Vec<Exp<T>>>,
     pub(crate) input: RefCell<HashSet<usize>>,
     pub(crate) build: bool,
 }
@@ -26,10 +26,10 @@ pub enum Exp<T> {
 impl<T: One> Default for Arena<T> {
     fn default() -> Self {
         Self {
-            wit: RefCell::new(vec![T::one()]), // 定数の1
-            alloc: RefCell::new(HashMap::new()),
-            equal: RefCell::new(Vec::new()),
-            input: RefCell::new(HashSet::new()),
+            auxes: RefCell::new(vec![T::one()]), // 定数の1
+            wires: RefCell::new(HashMap::new()),
+            exprs: RefCell::new(Vec::new()),
+            input: RefCell::new(HashSet::from([0])), // 定数の1は常にinput
             build: true,
         }
     }
@@ -38,17 +38,17 @@ impl<T: One> Default for Arena<T> {
 impl<T: Copy + One + Zero + PartialEq> Arena<T> {
     #[inline]
     pub fn disable(&self) {
-        self.wit.borrow_mut()[0] = T::zero(); // 定数項をゼロに
+        self.auxes.borrow_mut()[0] = T::zero(); // 定数項をゼロに
     }
 
     #[inline]
     pub fn enable(&self) {
-        self.wit.borrow_mut()[0] = T::one(); // 定数項を戻す
+        self.auxes.borrow_mut()[0] = T::one(); // 定数項を戻す
     }
 
     #[inline]
     pub fn alloc(&self, v: T) -> usize {
-        let mut wit = self.wit.borrow_mut();
+        let mut wit = self.auxes.borrow_mut();
         let idx = wit.len();
         wit.push(v);
         idx
@@ -88,9 +88,9 @@ impl<T: Copy + One + Zero + PartialEq> Arena<T> {
             };
 
             if let Some(idx) = idx {
-                self.alloc.borrow_mut().insert(idx, exp);
+                self.wires.borrow_mut().insert(idx, exp);
             } else {
-                self.equal.borrow_mut().push(exp);
+                self.exprs.borrow_mut().push(exp);
             }
         }
     }
@@ -98,7 +98,7 @@ impl<T: Copy + One + Zero + PartialEq> Arena<T> {
     pub fn apply_subset(&self, m: &mut M<T>) {
         let mut s = HashMap::new();
         for k in m.keys().copied().collect::<Vec<_>>() {
-            if let Some(Exp::L(l)) = self.alloc.borrow().get(&k) {
+            if let Some(Exp::L(l)) = self.wires.borrow().get(&k) {
                 merge_maps(&mut s, l);
                 m.remove(&k);
             }
@@ -108,9 +108,9 @@ impl<T: Copy + One + Zero + PartialEq> Arena<T> {
 
     #[inline]
     pub fn into_inner(self) -> (Vec<T>, HashMap<usize, Exp<T>>, Vec<Exp<T>>, HashSet<usize>) {
-        let wit = self.wit.into_inner();
-        let alloc = self.alloc.into_inner();
-        let equal = self.equal.into_inner();
+        let wit = self.auxes.into_inner();
+        let alloc = self.wires.into_inner();
+        let equal = self.exprs.into_inner();
         let input = self.input.into_inner();
         (wit, alloc, equal, input)
     }
