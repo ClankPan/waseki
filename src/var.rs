@@ -1,412 +1,235 @@
-use num_traits::{One, Zero};
-use std::{
-    iter::{Product, Sum},
-    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
-};
+use ark_ff::Field;
+use num_traits::One;
+use std::fmt::{self, Display};
 
 use crate::{
-    L, Q, l_add_l, l_mul_l, q_add_l, q_add_q, q_mul_l, q_mul_q, t_add_l, t_add_q, t_mul_l, t_mul_q,
+    list::List,
+    state::{
+        self, Index, LocalState, SparseRow, deserialize_field, has_state, init_local_state,
+        serialize_value, take_local_state, with_state,
+    },
 };
 
-#[derive(Copy, Clone, Debug)]
-pub enum V<'id, T> {
-    N,
-    L(L<'id, T>),
-    Q(Q<'id, T>),
+pub struct CompiledR1CS<F: Field> {
+    pub inputs: Vec<F>,
+    pub witness: Vec<F>,
+    pub a: Vec<SparseRow<F>>,
+    pub b: Vec<SparseRow<F>>,
+    pub c: Vec<SparseRow<F>>,
+    pub lc: (Vec<F>, Vec<F>, Vec<F>),
 }
 
-impl<'id, T> V<'id, T>
-where
-    T: One + Zero + Copy + PartialEq + Neg<Output = T> + Default,
-{
-    /// Creates an empty variable.
+impl<F: Field> CompiledR1CS<F> {
+    pub fn assignment(&self) -> Vec<F> {
+        let mut assignment = self.inputs.clone();
+        assignment.extend_from_slice(&self.witness);
+        assignment
+    }
+
+    pub fn is_satisfied(&self) -> bool {
+        let assignment = self.assignment();
+        self.a
+            .iter()
+            .zip(&self.b)
+            .zip(&self.c)
+            .all(|((a_row, b_row), c_row)| {
+                eval_row(a_row, &assignment) * eval_row(b_row, &assignment)
+                    == eval_row(c_row, &assignment)
+            })
+    }
+}
+
+impl<F: Field> Display for CompiledR1CS<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "R1CS rows: {}", self.a.len())?;
+        for (i, ((a_row, b_row), c_row)) in self.a.iter().zip(&self.b).zip(&self.c).enumerate() {
+            writeln!(f, "Row {}:", i)?;
+            writeln!(f, "  A: {} -> {:?}", self.lc.0[i], a_row)?;
+            writeln!(f, "  B: {} -> {:?}", self.lc.1[i], b_row)?;
+            writeln!(f, "  C: {} -> {:?}", self.lc.2[i], c_row)?;
+        }
+        Ok(())
+    }
+}
+
+fn eval_row<F: Field>(row: &SparseRow<F>, assignment: &[F]) -> F {
+    row.iter().fold(F::zero(), |acc, (col, coeff)| {
+        acc + *coeff * assignment[*col]
+    })
+}
+
+#[derive(Clone, Copy)]
+pub struct Var<F: Field> {
+    pub(crate) list: List<F>,
+    pub(crate) value: F,
+    pub(crate) stateful: bool,
+}
+
+impl<F: Field> Var<F> {
+    pub fn from(value: F) -> Self {
+        if has_state() {
+            let index = state::alloc(&value).expect("state missing despite has_state");
+            let list = List::new(index);
+            Self {
+                list,
+                value,
+                stateful: true,
+            }
+        } else {
+            Self {
+                list: List::empty(),
+                value,
+                stateful: false,
+            }
+        }
+    }
+
+    pub fn value(&self) -> F {
+        self.value
+    }
+
+    pub fn linear_terms(&self) -> Vec<(F, Index)> {
+        self.list.terms()
+    }
+
+    pub fn equal(&self, rhs: &Self) {
+        if self.stateful && rhs.stateful {
+            if let Some(_) = with_state(|state| {
+                let a_idx = state.push_linear_list(&self.list);
+                let c_idx = state.push_linear_list(&rhs.list);
+                let a = (a_idx, serialize_value(&self.value));
+                let b = (Index::I(0), serialize_value(&F::one()));
+                let c = (c_idx, serialize_value(&rhs.value));
+                state.push_quadratic_lists(a, b, c);
+            }) {}
+        }
+    }
+}
+
+impl<F: Field> One for Var<F> {
+    fn one() -> Self {
+        if has_state() {
+            Self {
+                list: List::new(Index::I(0)),
+                value: F::one(),
+                stateful: true,
+            }
+        } else {
+            Self {
+                list: List::empty(),
+                value: F::one(),
+                stateful: false,
+            }
+        }
+    }
+
+    fn is_one(&self) -> bool {
+        self.value == F::one()
+    }
+}
+
+pub struct ConstraintSystem<F: Field> {
+    _marker: std::marker::PhantomData<F>,
+    input: Vec<F>,
+    consumed: bool,
+}
+
+impl<F: Field> ConstraintSystem<F> {
     pub fn new() -> Self {
-        Self::N
-    }
-
-    /// Extracts inner value.
-    pub fn value(&self) -> T {
-        match self {
-            V::L(l) => l.value(),
-            V::Q(q) => q.value(),
-            V::N => T::zero(),
+        init_local_state();
+        Self {
+            _marker: std::marker::PhantomData,
+            input: vec![F::one()],
+            consumed: false,
         }
     }
 
-    /// Marks this variable as **public input** of the circuit.
-    pub fn inputize(&self) {
-        match self {
-            V::N => return,
-            V::L(l) => {
-                let idx = l.ar.alloc(l.v);
-                l.ar.wire(None, l.l.to_vec(), Some(idx));
-                l.ar.input(idx);
-            }
-            V::Q(q) => {
-                let (a, b, c) = (q.a, q.b, q.c);
-                let v = a.v * b.v + c.v;
-                let idx = q.ar.alloc(v);
-                q.ar.wire(Some((a.l.to_vec(), b.l.to_vec())), c.l.to_vec(), Some(idx));
-                q.ar.input(idx);
-            }
+    pub fn input(&mut self, value: F) -> Var<F> {
+        let index = self.input.len();
+        self.input.push(value);
+        Var {
+            list: List::new(Index::I(index)),
+            value,
+            stateful: true,
+        }
+    }
+
+    pub fn inputize(&mut self, var: Var<F>) {
+        let index = self.input.len();
+        self.input.push(var.value);
+        let c_idx = Index::I(index);
+
+        with_state(|state| {
+            let a_idx = state.push_linear_list(&var.list);
+            let a = (a_idx, serialize_value(&var.value));
+            let b = (Index::I(0), serialize_value(&F::one()));
+            let c = (c_idx, serialize_value(&var.value));
+            state.push_quadratic_lists(a, b, c);
+        })
+        .expect("constraint system state should be initialized");
+    }
+
+    pub fn into_state(mut self) -> LocalState {
+        self.consumed = true;
+        take_local_state().expect("LocalState should exist when consuming ConstraintSystem")
+    }
+
+    pub fn compile(self) -> CompiledR1CS<F> {
+        let inputs = self.input.clone();
+        let state = self.into_state();
+        let LocalState {
+            witness,
+            linear,
+            quadratic,
+            ..
+        } = state;
+
+        let witness: Vec<F> = witness.iter().map(deserialize_field::<F>).collect();
+        let input_len = inputs.len();
+        let mut cache: Vec<Option<SparseRow<F>>> = vec![None; linear.len()];
+
+        let mut expand = |idx: Index| -> SparseRow<F> {
+            crate::state::expand_index(idx, input_len, &linear, &mut cache)
         };
-    }
 
-    /// Enforce this variable equals zero within the circuit.
-    pub fn equals_zero(&self) {
-        match self {
-            V::N => return,
-            V::L(l) => l.ar.wire(None, l.l.to_vec(), None),
-            V::Q(q) => {
-                q.ar.wire(Some((q.a.l.to_vec(), q.b.l.to_vec())), q.c.l.to_vec(), None)
-            }
-        };
-    }
+        let mut a = Vec::with_capacity(quadratic.len());
+        let mut b = Vec::with_capacity(quadratic.len());
+        let mut c = Vec::with_capacity(quadratic.len());
 
-    /// Enforces equality between two variables in the circuit.
-    pub fn equals(&self, rhs: Self) {
-        (self - &rhs).equals_zero();
-    }
+        let mut lc_a = Vec::with_capacity(quadratic.len());
+        let mut lc_b = Vec::with_capacity(quadratic.len());
+        let mut lc_c = Vec::with_capacity(quadratic.len());
 
-    /// Enforce this variable equals the constant within the circuit.
-    pub fn equals_const<U>(&self, t: U)
-    where
-        U: Into<T>,
-    {
-        (self - &t.into()).equals_zero();
-    }
-}
+        for ((a_idx, a_bytes), (b_idx, b_bytes), (c_idx, c_bytes)) in quadratic {
+            let expanded_a_raw = expand(a_idx);
+            let expanded_b_raw = expand(b_idx);
+            let expanded_c_raw = expand(c_idx);
+            let a_value = deserialize_field(&a_bytes);
+            let b_value = deserialize_field(&b_bytes);
+            let c_value = deserialize_field(&c_bytes);
+            lc_a.push(a_value);
+            lc_b.push(b_value);
+            lc_c.push(c_value);
+            a.push(expanded_a_raw);
+            b.push(expanded_b_raw);
+            c.push(expanded_c_raw);
+        }
 
-impl<'id, T> Neg for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
-{
-    type Output = V<'id, T>;
-
-    fn neg(self) -> Self::Output {
-        let minus = -T::one();
-        match self {
-            V::N => V::N,
-            V::L(l) => V::L(t_mul_l(minus, l)),
-            V::Q(q) => V::Q(t_mul_q(minus, q)),
+        CompiledR1CS {
+            inputs,
+            witness,
+            a,
+            b,
+            c,
+            lc: (lc_a, lc_b, lc_c),
         }
     }
 }
 
-// V + V -> V
-impl<'id, T> Add for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = V<'id, T>;
-    fn add(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (V::L(x), V::L(y)) => V::L(l_add_l(x, y)),
-            (V::Q(x), V::Q(y)) => V::Q(q_add_q(x, y)),
-            (V::L(l), V::Q(q)) | (V::Q(q), V::L(l)) => V::Q(q_add_l(q, l)),
-            (V::N, V::L(l)) | (V::L(l), V::N) => V::L(l),
-            (V::N, V::Q(q)) | (V::Q(q), V::N) => V::Q(q),
-            (V::N, V::N) => V::N,
+impl<F: Field> Drop for ConstraintSystem<F> {
+    fn drop(&mut self) {
+        if !self.consumed {
+            let _ = take_local_state();
         }
-    }
-}
-
-// V - V -> V
-impl<'id, T> Sub for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
-{
-    type Output = V<'id, T>;
-    fn sub(self, rhs: Self) -> Self::Output {
-        self + rhs.neg()
-    }
-}
-
-// V * V -> V
-impl<'id, T> Mul for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = V<'id, T>;
-    fn mul(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (V::L(x), V::L(y)) => V::Q(l_mul_l(x, y)),
-            (V::Q(x), V::Q(y)) => V::Q(q_mul_q(x, y)),
-            (V::L(l), V::Q(q)) | (V::Q(q), V::L(l)) => V::Q(q_mul_l(q, l)),
-            (V::N, V::L(l)) | (V::L(l), V::N) => V::L(l),
-            (V::N, V::Q(q)) | (V::Q(q), V::N) => V::Q(q),
-            (V::N, V::N) => V::N,
-        }
-    }
-}
-
-// &V + &V -> V
-impl<'id, T> Add for &V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = V<'id, T>;
-    fn add(self, rhs: Self) -> Self::Output {
-        *self + *rhs
-    }
-}
-
-// &V - &V -> V
-impl<'id, T> Sub for &V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
-{
-    type Output = V<'id, T>;
-    fn sub(self, rhs: Self) -> Self::Output {
-        *self + rhs.neg()
-    }
-}
-
-// &V * &V -> V
-impl<'id, T> Mul for &V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = V<'id, T>;
-    fn mul(self, rhs: Self) -> Self::Output {
-        *self * *rhs
-    }
-}
-
-// V + T -> V
-impl<'id, T> Add<T> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = V<'id, T>;
-    fn add(self, rhs: T) -> Self::Output {
-        match self {
-            V::L(l) => V::L(t_add_l(rhs, l)),
-            V::Q(q) => V::Q(t_add_q(rhs, q)),
-            V::N => V::N,
-        }
-    }
-}
-
-// V - T -> V
-impl<'id, T> Sub<T> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
-{
-    type Output = V<'id, T>;
-    fn sub(self, rhs: T) -> Self::Output {
-        self + rhs.neg()
-    }
-}
-
-// V * T -> V
-impl<'id, T> Mul<T> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = V<'id, T>;
-    fn mul(self, rhs: T) -> Self::Output {
-        match self {
-            V::L(l) => V::L(t_mul_l(rhs, l)),
-            V::Q(q) => V::Q(t_mul_q(rhs, q)),
-            V::N => V::N,
-        }
-    }
-}
-
-// &V + &T -> V
-impl<'id, T> Add<&T> for &V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = V<'id, T>;
-    fn add(self, rhs: &T) -> Self::Output {
-        *self + *rhs
-    }
-}
-
-// &V - &T -> V
-impl<'id, T> Sub<&T> for &V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
-{
-    type Output = V<'id, T>;
-    fn sub(self, rhs: &T) -> Self::Output {
-        *self + rhs.neg()
-    }
-}
-
-// &V * &T -> V
-impl<'id, T> Mul<&T> for &V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    type Output = V<'id, T>;
-    fn mul(self, rhs: &T) -> Self::Output {
-        *self * *rhs
-    }
-}
-
-// V += V
-impl<'id, T> AddAssign for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    fn add_assign(&mut self, rhs: Self) {
-        *self = &*self + &rhs;
-    }
-}
-
-// V += &V
-impl<'id, T> AddAssign<&V<'id, T>> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    #[inline]
-    fn add_assign(&mut self, rhs: &Self) {
-        *self = &*self + rhs;
-    }
-}
-
-// V -= V
-impl<'id, T> SubAssign for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
-{
-    fn sub_assign(&mut self, rhs: Self) {
-        *self = &*self - &rhs;
-    }
-}
-
-// V -= &V
-impl<'id, T> SubAssign<&V<'id, T>> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
-{
-    #[inline]
-    fn sub_assign(&mut self, rhs: &Self) {
-        *self = &*self - rhs;
-    }
-}
-
-// V *= V
-impl<'id, T> MulAssign for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    fn mul_assign(&mut self, rhs: Self) {
-        *self = &*self * &rhs;
-    }
-}
-
-// V *= &V
-impl<'id, T> MulAssign<&V<'id, T>> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    #[inline]
-    fn mul_assign(&mut self, rhs: &Self) {
-        *self = &*self * rhs;
-    }
-}
-
-// V += T
-impl<'id, T> AddAssign<T> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    fn add_assign(&mut self, rhs: T) {
-        *self = *self + rhs;
-    }
-}
-
-// V += &T
-impl<'id, T> AddAssign<&T> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    #[inline]
-    fn add_assign(&mut self, rhs: &T) {
-        *self = *self + *rhs;
-    }
-}
-
-// V -= T
-impl<'id, T> SubAssign<T> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
-{
-    fn sub_assign(&mut self, rhs: T) {
-        *self = *self - rhs;
-    }
-}
-
-// V -= &T
-impl<'id, T> SubAssign<&T> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
-{
-    #[inline]
-    fn sub_assign(&mut self, rhs: &T) {
-        *self = *self - *rhs;
-    }
-}
-
-// V *= T
-impl<'id, T> MulAssign<T> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    fn mul_assign(&mut self, rhs: T) {
-        *self = *self * rhs;
-    }
-}
-
-// V *= &T
-impl<'id, T> MulAssign<&T> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    #[inline]
-    fn mul_assign(&mut self, rhs: &T) {
-        *self = *self * *rhs;
-    }
-}
-
-// by-value: Iterator<Item = L>
-impl<'id, T> Sum for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(Self::N, |acc, x| acc + x)
-    }
-}
-
-// by-ref: Iterator<Item = &L>
-impl<'id, 'a, T> Sum<&'a V<'id, T>> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    fn sum<I: Iterator<Item = &'a V<'id, T>>>(iter: I) -> Self {
-        iter.fold(Self::N, |acc, x| acc + *x)
-    }
-}
-
-impl<'id, T> Product for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(Self::N, |acc, x| acc * x)
-    }
-}
-
-impl<'id, 'a, T> Product<&'a V<'id, T>> for V<'id, T>
-where
-    T: Copy + Default + PartialEq + One + Zero,
-{
-    fn product<I: Iterator<Item = &'a V<'id, T>>>(iter: I) -> Self {
-        iter.fold(Self::N, |acc, x| acc * *x)
     }
 }

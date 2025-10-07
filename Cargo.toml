@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 num-traits = "0.2.19"
+ark-ff = "0.5.0"
+ark-serialize = { version = "0.5", features = ["derive"] }
 
 [dev-dependencies]
 stark-rings = { git = "https://github.com/NethermindEth/stark-rings.git", branch = "main", default-features = false }
