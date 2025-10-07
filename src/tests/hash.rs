@@ -384,7 +384,7 @@ mod tests {
 
         // cswireのposeidon
         let mut cs = ConstraintSystem::default();
-        cs.with_cs(|cs| {
+        cs.synthesize_with(|cs| {
             let config = circom_bn254_poseidon_canonical_config::<Fr>();
             let mut sponge = CWPoseidonSponge::<Fr>::new(cs.clone(), &config);
             for v in values.iter() {
@@ -413,7 +413,7 @@ mod tests {
 
         // cswireのposeidon
         let mut cs = ConstraintSystem::default();
-        cs.with_cs(|cs| {
+        cs.synthesize_with(|cs| {
             let config = circom_bn254_poseidon_canonical_config::<Fr>();
             let mut sponge = CWPoseidonSponge::<Fr>::new(cs.clone(), &config);
             for v in values.iter() {

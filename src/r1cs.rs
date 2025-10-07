@@ -1,3 +1,5 @@
+// Use BTree instead of HashMap because determinism
+
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry},
     iter::Sum,
@@ -57,11 +59,11 @@ where
 {
     let ninputs = io.len();
     // 途中で生成された冗長な制約をなくす
-    optimize(&auxes, &mut wires, &io);
+    optimize(&auxes, &mut wires, &exprs, &io);
 
     let (constraints, table) = build_constraints(wires, exprs, io);
 
-    println!("constraints: {:?}\ntable: {:?}\n", constraints, table);
+    // println!("constraints: {:?}\ntable: {:?}\n", constraints, table);
 
     R1CS {
         ninputs,
@@ -72,13 +74,33 @@ where
 }
 
 // Input変数から到達できない孤立した制約を削除する
-pub fn optimize<T>(auxes: &Vec<T>, wires: &mut BTreeMap<usize, Exp<T>>, io: &BTreeSet<usize>)
-where
+pub fn optimize<T>(
+    auxes: &Vec<T>,
+    wires: &mut BTreeMap<usize, Exp<T>>,
+    exprs: &Vec<Exp<T>>,
+    io: &BTreeSet<usize>,
+) where
     T: Copy + One + Zero + PartialEq + std::fmt::Debug,
 {
     // 到達集合と frontier を I/O で初期化
     let mut reached: BTreeSet<usize> = io.clone();
-    let mut q: VecDeque<usize> = io.iter().copied().collect();
+    for exp in exprs {
+        match exp {
+            Exp::L(l) => {
+                for &k in l.keys() {
+                    reached.insert(k);
+                }
+            }
+            Exp::Q(a, b, c) => {
+                for m in [&a, &b, &c] {
+                    for &k in m.keys() {
+                        reached.insert(k);
+                    }
+                }
+            }
+        }
+    }
+    let mut q: VecDeque<usize> = reached.iter().copied().collect();
 
     while let Some(idx) = q.pop_front() {
         match (wires.get(&idx), auxes.get(idx)) {

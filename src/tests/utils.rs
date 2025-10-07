@@ -19,8 +19,8 @@ pub fn pow<'a, F: Field>(cs: CS<'a, F>, mut base: V<'a, F>, mut exp: u64) -> V<'
 #[test]
 pub fn test_pow() {
     use ark_bn254::Fr;
-    let mut cs = ConstraintSystem::default();
-    cs.with_cs(|cs| {
+    let mut cs = ConstraintSystem::<Fr>::default();
+    cs.synthesize_with(|cs| {
         let a = cs.alloc(Fr::from(2));
         let b = pow(cs, a, 3);
 
@@ -40,7 +40,7 @@ pub fn waseki_pow<F: Field>(base: u128, exp: u64) -> ConstraintSystem<F>
 where
 {
     let mut cs = ConstraintSystem::default();
-    cs.with_cs(|cs| {
+    cs.synthesize_with(|cs| {
         let a = cs.input(F::from(base));
         let b = pow(cs, a, exp);
         // cs.equal(b, cs.constant(b.value()));

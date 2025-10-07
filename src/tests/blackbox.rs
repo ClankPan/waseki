@@ -44,19 +44,18 @@ impl<Fr: PrimeField> ArkConstraintSynthesizer<Fr> for Circuit<Fr> {
 
 fn waseki_circuit(x: Fr, y: Fr) -> R1CS<Fr> {
     let mut cs = WasekiConstraintSystem::<Fr>::default();
-    cs.with_cs(|cs| {
+    cs.synthesize_with(|cs| {
         let x = cs.input(x);
         let y = cs.input(y);
 
         // x^3 + x + 5 を計算
         let x2 = x * x; // x^2
         let x3 = x2 * x; // x^3
-        x3.inputize();
-        // let five = cs.constant(Fr::from(5u64));
-        // let expr = x3 + x + five; // x^3 + x + 5
-        //
-        // // 制約: expr == y
-        // expr.equals(y);
+        let five = cs.constant(Fr::from(5u64));
+        let expr = x3 + x + five; // x^3 + x + 5
+
+        // 制約: expr == y
+        expr.equals(y);
     });
     let r1cs = cs.r1cs.unwrap();
     println!("waseki:\n{:?}\n", r1cs);

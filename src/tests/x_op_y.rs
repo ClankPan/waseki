@@ -5,7 +5,7 @@ use crate::{ConstraintSystem, L, N, l_add_l};
 #[test]
 fn test_l_add_l() {
     let mut cs = ConstraintSystem::default();
-    cs.with_cs(|cs| {
+    cs.synthesize_with(|cs| {
         let v_a = Fr::from(111);
         let v_b = Fr::from(222);
         let l_a = L::constant(cs.ar, v_a);

@@ -1,7 +1,7 @@
 use num_traits::{One, Zero};
 use std::{
     iter::{Product, Sum},
-    ops::{Add, AddAssign, Mul, Neg, Sub},
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
 use crate::{
@@ -19,10 +19,12 @@ impl<'id, T> V<'id, T>
 where
     T: One + Zero + Copy + PartialEq + Neg<Output = T> + Default,
 {
+    /// Creates an empty variable.
     pub fn new() -> Self {
         Self::N
     }
 
+    /// Extracts inner value.
     pub fn value(&self) -> T {
         match self {
             V::L(l) => l.value(),
@@ -31,6 +33,7 @@ where
         }
     }
 
+    /// Marks this variable as **public input** of the circuit.
     pub fn inputize(&self) {
         match self {
             V::N => return,
@@ -49,10 +52,7 @@ where
         };
     }
 
-    pub fn equals(&self, rhs: Self) {
-        (self - &rhs).equals_zero();
-    }
-
+    /// Enforce this variable equals zero within the circuit.
     pub fn equals_zero(&self) {
         match self {
             V::N => return,
@@ -61,6 +61,19 @@ where
                 q.ar.wire(Some((q.a.l.to_vec(), q.b.l.to_vec())), q.c.l.to_vec(), None)
             }
         };
+    }
+
+    /// Enforces equality between two variables in the circuit.
+    pub fn equals(&self, rhs: Self) {
+        (self - &rhs).equals_zero();
+    }
+
+    /// Enforce this variable equals the constant within the circuit.
+    pub fn equals_const<U>(&self, t: U)
+    where
+        U: Into<T>,
+    {
+        (self - &t.into()).equals_zero();
     }
 }
 
@@ -175,6 +188,17 @@ where
     }
 }
 
+// V - T -> V
+impl<'id, T> Sub<T> for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
+{
+    type Output = V<'id, T>;
+    fn sub(self, rhs: T) -> Self::Output {
+        self + rhs.neg()
+    }
+}
+
 // V * T -> V
 impl<'id, T> Mul<T> for V<'id, T>
 where
@@ -187,6 +211,39 @@ where
             V::Q(q) => V::Q(t_mul_q(rhs, q)),
             V::N => V::N,
         }
+    }
+}
+
+// &V + &T -> V
+impl<'id, T> Add<&T> for &V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero,
+{
+    type Output = V<'id, T>;
+    fn add(self, rhs: &T) -> Self::Output {
+        *self + *rhs
+    }
+}
+
+// &V - &T -> V
+impl<'id, T> Sub<&T> for &V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
+{
+    type Output = V<'id, T>;
+    fn sub(self, rhs: &T) -> Self::Output {
+        *self + rhs.neg()
+    }
+}
+
+// &V * &T -> V
+impl<'id, T> Mul<&T> for &V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero,
+{
+    type Output = V<'id, T>;
+    fn mul(self, rhs: &T) -> Self::Output {
+        *self * *rhs
     }
 }
 
@@ -211,6 +268,48 @@ where
     }
 }
 
+// V -= V
+impl<'id, T> SubAssign for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
+{
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = &*self - &rhs;
+    }
+}
+
+// V -= &V
+impl<'id, T> SubAssign<&V<'id, T>> for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
+{
+    #[inline]
+    fn sub_assign(&mut self, rhs: &Self) {
+        *self = &*self - rhs;
+    }
+}
+
+// V *= V
+impl<'id, T> MulAssign for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero,
+{
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = &*self * &rhs;
+    }
+}
+
+// V *= &V
+impl<'id, T> MulAssign<&V<'id, T>> for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero,
+{
+    #[inline]
+    fn mul_assign(&mut self, rhs: &Self) {
+        *self = &*self * rhs;
+    }
+}
+
 // V += T
 impl<'id, T> AddAssign<T> for V<'id, T>
 where
@@ -229,6 +328,48 @@ where
     #[inline]
     fn add_assign(&mut self, rhs: &T) {
         *self = *self + *rhs;
+    }
+}
+
+// V -= T
+impl<'id, T> SubAssign<T> for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
+{
+    fn sub_assign(&mut self, rhs: T) {
+        *self = *self - rhs;
+    }
+}
+
+// V -= &T
+impl<'id, T> SubAssign<&T> for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
+{
+    #[inline]
+    fn sub_assign(&mut self, rhs: &T) {
+        *self = *self - *rhs;
+    }
+}
+
+// V *= T
+impl<'id, T> MulAssign<T> for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero,
+{
+    fn mul_assign(&mut self, rhs: T) {
+        *self = *self * rhs;
+    }
+}
+
+// V *= &T
+impl<'id, T> MulAssign<&T> for V<'id, T>
+where
+    T: Copy + Default + PartialEq + One + Zero,
+{
+    #[inline]
+    fn mul_assign(&mut self, rhs: &T) {
+        *self = *self * *rhs;
     }
 }
 

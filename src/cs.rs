@@ -17,11 +17,12 @@ impl<T> ConstraintSystem<T>
 where
     T: Clone + Copy + Default + PartialEq + One + Zero + Neg<Output = T> + Sum + std::fmt::Debug,
 {
-    pub fn with_cs<R, F>(&mut self, f: F) -> R
+    pub fn synthesize_with<R, F>(&mut self, f: F) -> R
     where
         F: for<'id> FnOnce(ConstraintSynthesizer<'id, T>) -> R,
         T: One + Zero + Copy + PartialEq + std::fmt::Debug,
     {
+        self.witness.clear();
         let ar = Arena::<T>::default();
         let cs = ConstraintSynthesizer {
             ar: &ar,
@@ -42,6 +43,7 @@ where
 
         return r;
     }
+
     pub fn is_satisfied(&self) -> bool {
         if let Some(r1cs) = &self.r1cs {
             r1cs.satisfies(&self.witness)
@@ -62,12 +64,19 @@ where
     T: Clone + Copy + Default + PartialEq + One + Zero + Neg<Output = T>,
 {
     #[inline]
-    pub fn alloc(&self, v: T) -> V<'id, T> {
-        V::L(L::alloc(self.ar, v))
+    pub fn alloc<U>(&self, v: U) -> V<'id, T>
+    where
+        U: Into<T>,
+    {
+        V::L(L::alloc(self.ar, v.into()))
     }
 
     #[inline]
-    pub fn input(&self, v: T) -> V<'id, T> {
+    pub fn input<U>(&self, v: U) -> V<'id, T>
+    where
+        U: Into<T>,
+    {
+        let v = v.into();
         let idx = self.ar.alloc(v);
         let ar = self.ar;
         let l = List::new((idx, T::one()));
@@ -76,8 +85,11 @@ where
     }
 
     #[inline]
-    pub fn constant(&self, t: T) -> V<'id, T> {
-        V::L(L::constant(self.ar, t))
+    pub fn constant<U>(&self, t: U) -> V<'id, T>
+    where
+        U: Into<T>,
+    {
+        V::L(L::constant(self.ar, t.into()))
     }
 
     #[inline]
