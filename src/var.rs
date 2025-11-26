@@ -1,5 +1,5 @@
 use ark_ff::Field;
-use num_traits::One;
+use num_traits::{One, Zero};
 use std::fmt::{self, Display};
 
 use crate::{
@@ -125,6 +125,28 @@ impl<F: Field> One for Var<F> {
 
     fn is_one(&self) -> bool {
         self.value == F::one()
+    }
+}
+
+impl<F: Field> Zero for Var<F> {
+    fn zero() -> Self {
+        if has_state() {
+            Self {
+                list: List::empty(),
+                value: F::zero(),
+                stateful: true,
+            }
+        } else {
+            Self {
+                list: List::empty(),
+                value: F::zero(),
+                stateful: false,
+            }
+        }
+    }
+
+    fn is_zero(&self) -> bool {
+        self.value.is_zero()
     }
 }
 
