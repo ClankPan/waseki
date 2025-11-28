@@ -2,7 +2,7 @@ use ark_ff::Field;
 use num_traits::One;
 use std::{
     iter::{Product, Sum},
-    ops::{Add, Mul, Sub},
+    ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 };
 
 use crate::{
@@ -27,11 +27,30 @@ impl<F: Field> Add for Var<F> {
     }
 }
 
+impl<F: Field> AddAssign for Var<F> {
+    fn add_assign(&mut self, rhs: Self) {
+        self.value += rhs.value;
+        self.stateful &= rhs.stateful;
+        if self.stateful {
+            for entry in rhs.list.list {
+                let Some((coeff, index)) = entry else { break };
+                self.list.push(coeff, index);
+            }
+        }
+    }
+}
+
 impl<F: Field> Sub for Var<F> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
         self + rhs * F::one().neg()
+    }
+}
+
+impl<F: Field> SubAssign for Var<F> {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self += rhs * F::one().neg();
     }
 }
 
@@ -44,6 +63,21 @@ impl<F: Field> Add<F> for Var<F> {
             self.list.push(rhs, Index::I(0));
         }
         self
+    }
+}
+
+impl<F: Field> AddAssign<F> for Var<F> {
+    fn add_assign(&mut self, rhs: F) {
+        self.value += rhs;
+        if self.stateful {
+            self.list.push(rhs, Index::I(0));
+        }
+    }
+}
+
+impl<F: Field> SubAssign<F> for Var<F> {
+    fn sub_assign(&mut self, rhs: F) {
+        *self += rhs.neg();
     }
 }
 
@@ -78,6 +112,12 @@ impl<F: Field> Mul for Var<F> {
     }
 }
 
+impl<F: Field> MulAssign for Var<F> {
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = *self * rhs;
+    }
+}
+
 impl<F: Field> Mul<F> for Var<F> {
     type Output = Self;
 
@@ -87,6 +127,15 @@ impl<F: Field> Mul<F> for Var<F> {
             self.list.apply(rhs);
         }
         self
+    }
+}
+
+impl<F: Field> MulAssign<F> for Var<F> {
+    fn mul_assign(&mut self, rhs: F) {
+        self.value *= rhs;
+        if self.stateful {
+            self.list.apply(rhs);
+        }
     }
 }
 
