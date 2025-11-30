@@ -136,6 +136,14 @@ impl<F: Field> Mul<F> for Var<F> {
     }
 }
 
+impl<F: Field> Mul<&F> for Var<F> {
+    type Output = Self;
+
+    fn mul(self, rhs: &F) -> Self::Output {
+        self * *rhs
+    }
+}
+
 impl<F: Field> MulAssign<F> for Var<F> {
     fn mul_assign(&mut self, rhs: F) {
         self.value *= rhs;
