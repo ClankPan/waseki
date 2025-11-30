@@ -75,6 +75,12 @@ impl<F: Field> AddAssign<F> for Var<F> {
     }
 }
 
+impl<F: Field> AddAssign<&F> for Var<F> {
+    fn add_assign(&mut self, rhs: &F) {
+        *self += *rhs
+    }
+}
+
 impl<F: Field> SubAssign<F> for Var<F> {
     fn sub_assign(&mut self, rhs: F) {
         *self += rhs.neg();
